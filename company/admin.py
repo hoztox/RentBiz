@@ -13,6 +13,8 @@ admin.site.register(UnitDocumentType)
 admin.site.register(UnitType)
 admin.site.register(MasterDocumentType)
 admin.site.register(IDType)
+admin.site.register(ChargeCode)
+admin.site.register(Charges)
 
 admin.site.register(Currency)
 

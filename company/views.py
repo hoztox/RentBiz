@@ -378,3 +378,81 @@ class TenantByCompanyView(APIView):
         buildings = Tenant.objects.filter(company__id=company_id)
         serializer = TenantGetSerializer(buildings, many=True)
         return Response(serializer.data)
+    
+
+
+class ChargecodeListCreateAPIView(APIView):
+    def post(self, request):
+        serializer = ChargeCodeSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)   
+    
+class ChargecodeByCompanyAPIView(APIView):
+    def get(self, request, company_id):
+        unit_types = ChargeCode.objects.filter(company_id=company_id)
+        serializer = ChargeCodeSerializer(unit_types, many=True)
+        return Response(serializer.data)
+    
+ 
+class ChargecodeDetailAPIView(APIView):
+    def get_object(self, id):
+        return get_object_or_404(ChargeCode, id=id)
+
+    def get(self, request, id):
+        unit_type = self.get_object(id)
+        serializer = ChargeCodeSerializer(unit_type)
+        return Response(serializer.data)
+
+    def put(self, request, id):
+        unit_type = self.get_object(id)
+        serializer = ChargeCodeSerializer(unit_type, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, id):
+        unit_type = self.get_object(id)
+        unit_type.delete()
+        return Response({"message": "Deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
+
+
+
+class ChargesListCreateAPIView(APIView):
+    def post(self, request):
+        serializer = ChargesSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)   
+    
+class ChargesByCompanyAPIView(APIView):
+    def get(self, request, company_id):
+        unit_types = ChargeCode.objects.filter(company_id=company_id)
+        serializer = ChargesGetSerializer(unit_types, many=True)
+        return Response(serializer.data)
+    
+ 
+class ChargesDetailAPIView(APIView):
+    def get_object(self, id):
+        return get_object_or_404(ChargeCode, id=id)
+
+    def get(self, request, id):
+        unit_type = self.get_object(id)
+        serializer = ChargesGetSerializer(unit_type)
+        return Response(serializer.data)
+
+    def put(self, request, id):
+        unit_type = self.get_object(id)
+        serializer = ChargesSerializer(unit_type, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, id):
+        unit_type = self.get_object(id)
+        unit_type.delete()
+        return Response({"message": "Deleted successfully"}, status=status.HTTP_204_NO_CONTENT)

@@ -201,3 +201,22 @@ class TenantDocumentType(models.Model):
         return self.tenant.tenant_name if self.tenant.tenant_name else "Untitled Tenant"
 
 
+class ChargeCode(models.Model):
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='charge_comp', null=True, blank=True) 
+    title = models.CharField(max_length=100, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return self.title
+    
+    
+class Charges(models.Model):
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='charges_comp', null=True, blank=True) 
+    name = models.CharField(max_length=100, null=True, blank=True)
+    charge_code = models.ForeignKey(ChargeCode, on_delete=models.CASCADE, related_name='charge_code_comp', null=True, blank=True) 
+    vat_percentage = models.FloatField(null=True, blank=True)  
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return self.name if self.name else "Untitled Unit"
+    

@@ -46,6 +46,16 @@ urlpatterns = [
     path('tenant/<int:pk>/', TenantDetailView.as_view(), name='building-detail'),
     path('tenant/company/<int:company_id>/', TenantByCompanyView.as_view(), name='building-by-company'),
     
+    
+    # Chanrge code in masters
+    path('charge_code/create/',ChargecodeListCreateAPIView.as_view(), name='unit-type-list-create'),
+    path('charge_code/<int:id>/', ChargecodeDetailAPIView.as_view(), name='unit-type-detail'),
+    path('charge_code/company/<int:company_id>/', ChargecodeByCompanyAPIView.as_view(), name='unit-type-by-company'),
+    
+    # Charges in masters
+    path('charges/create/',ChargesListCreateAPIView.as_view(), name='unit-type-list-create'),
+    path('charges/<int:id>/', ChargesDetailAPIView.as_view(), name='unit-type-detail'),
+    path('charges/company/<int:company_id>/', ChargesByCompanyAPIView.as_view(), name='unit-type-by-company'),
 ]
 
 

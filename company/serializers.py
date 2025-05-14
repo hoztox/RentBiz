@@ -234,4 +234,22 @@ class TenantSerializer(serializers.ModelSerializer):
             TenantDocumentType.objects.create(tenant=instance, **doc_data)
 
         return instance
-    
+
+
+class ChargeCodeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChargeCode
+        fields = '__all__'
+        
+        
+class ChargesSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Charges
+        fields = '__all__'
+        
+        
+class ChargesGetSerializer(serializers.ModelSerializer):
+    charge_code = ChargeCodeSerializer(required=False)
+    class Meta:
+        model = Charges
+        fields = '__all__'
