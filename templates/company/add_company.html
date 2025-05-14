@@ -1,0 +1,246 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rentbiz - Building Information</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background-color: white;
+            border: 1px solid #ddd;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            padding: 15px 0;
+            background-color: white;
+        }
+        .logo {
+            width: 150px;
+            height: auto;
+            max-width: 80%;
+        }
+        .banner-container {
+            padding: 0 20px;
+            margin-bottom: 15px;
+        }
+        .banner {
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            background-color: #ffffff;
+            text-align: center;
+            padding: 26px 10px;
+            position: relative;
+            margin-bottom: 20px;
+        }
+        .banner-title {
+            font-size: 26px;
+            font-weight: bold;
+            color: #1E1E1E;
+            padding-bottom: 10px;
+        }
+        .check-icon {
+            width: 40px;
+            height: 40px;
+            margin: 0 auto;
+            display: block;
+            border: 1px dashed #2170B8;
+            border-radius: 50%;
+            padding: 5px;
+        }
+        .building-info {
+            padding: 0 20px;
+        }
+        .info-container {
+            background-color: #F8F9FA;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .building-header {
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            width: 100%;
+            table-layout: fixed;
+        }
+        .building-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #222;
+            width: 60%;
+            text-align: left;
+        }
+        .dashboard-link-cell {
+            width: 40%;
+            text-align: right;
+        }
+        .dashboard-link {
+            color: #2170B8;
+            text-decoration: none;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+        .info-row {
+            display: flex;
+            margin-bottom: 12px;
+        }
+        .info-label {
+            width: 130px;
+            color: #999;
+            font-size: 14px;
+        }
+        .info-value {
+            flex: 1;
+            font-weight: 500;
+            font-size: 14px;
+            color: #222;
+        }
+        .footer {
+            text-align: center;
+            padding: 0px 10px;
+            font-size: 13px;
+            color: #999;
+           
+        }
+        .last {
+            padding-top: 10px;
+            padding-bottom: 10px;
+        }
+        
+        /* Table layout for email clients with poor CSS support */
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        td {
+            padding: 0;
+        }
+        
+        /* For email clients that don't support flexbox */
+        @media screen and (max-width: 600px) {
+            .building-title {
+                width: 100%;
+                display: block;
+                text-align: center;
+                margin-bottom: 10px;
+            }
+            .dashboard-link-cell {
+                width: 100%;
+                display: block;
+                text-align: center;
+            }
+            .info-row {
+                flex-direction: column;
+            }
+            .info-label {
+                width: 100%;
+                margin-bottom: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+            <tr>
+                <td class="header">
+                    <img src="https://hoztox-test.s3.ap-south-1.amazonaws.com/media/Frame+2147224649.png" alt="Rentbiz Logo" class="logo">
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="banner-container">
+                    <div class="banner">
+                        <div class="banner-title">
+                            {{ company_name }} Create Successful
+                        </div>
+                        <img src="https://hoztox-test.s3.ap-south-1.amazonaws.com/media/approved_1462162+1.png" alt="Success" class="check-icon">
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td style="padding: 0 10px 10px 10px;">
+                    <div style="background-color: #f8f9fa; color: #212529; border: 1px solid #dee2e6; border-radius: 6px; padding: 8px; font-size: 14px; line-height: 1.5;">
+                        <p><strong>Important:</strong> For security reasons, your password is not included in this email.Please contact your system administrator to receive your password.</p>
+                        
+                    </div>
+                </td>
+            </tr>
+            
+            
+            <tr>
+                <td class="building-info">
+                    <div class="info-container">
+                        <!-- Changed from div to table for better email client compatibility -->
+                        <table class="building-header" border="0" cellpadding="0" cellspacing="0">
+                            <tr>
+                                <td class="building-title">{{ company_name }}</td>
+                                <td class="dashboard-link-cell">
+                                    <a href="#" class="dashboard-link">Open in Dashboard</a>
+                                </td>
+                            </tr>
+                        </table>
+                        
+                        <div class="info-row">
+                            <div class="info-label">Company Name:</div>
+                            <div class="info-value">{{ company_name }}</div>
+                        </div>
+                        
+                        <div class="info-row">
+                            <div class="info-label">Admin Name:</div>
+                            <div class="info-value">{{ company_admin_name }}</div>
+                        </div>
+                        
+                        <div class="info-row">
+                            <div class="info-label">Username:</div>
+                            <div class="info-value">{{ user_id }}</div>
+                        </div>
+                        
+                        <div class="info-row">
+                            <div class="info-label">Email:</div>
+                            <div class="info-value">{{ email_address }}</div>
+                        </div>
+                        
+                        <div class="info-row">
+                            <div class="info-label">Currency:</div>
+                            <div class="info-value">{{ currency }}</div>
+                        </div>
+                        
+                        <div class="info-row">
+                            <div class="info-label">Currency Code:</div>
+                            <div class="info-value">{{ currency_code }}</div>
+                        </div>
+                        
+                        <div class="info-row">
+                            <div class="info-label">Phone Number 1:</div>
+                            <div class="info-value">{{ phone_no1 }}</div>
+                        </div>
+                        
+                        <div class="info-row">
+                            <div class="info-label">Phone Number 2:</div>
+                            <div class="info-value">{{ phone_no2 }}</div>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="footer">
+                    <div>Copyright 2025 Rentbiz, all rights reserved.</div>
+                    <div class="last">Rentbiz Building UAE</div>
+                </td>
+            </tr>
+        </table>
+    </div>
+</body>
+</html>
