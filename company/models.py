@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.hashers import make_password, check_password
 from accounts.models import *
+from decimal import Decimal
 
 
 class Users(models.Model):   
@@ -39,7 +40,7 @@ class Users(models.Model):
 
     
     def __str__(self):
-        return self.name
+        return self.name if self.name else "Unnamed User"
 
 class MasterDocumentType(models.Model):
     user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='user_comp', null=True, blank=True) 
@@ -72,7 +73,7 @@ class Building(models.Model):
     
     
     def __str__(self):
-        return self.building_name
+        return self.building_name if self.building_name else "Unnamed Building"
     
 class DocumentType(models.Model):  
     Building = models.ForeignKey(Building, on_delete=models.CASCADE, related_name='build_comp', null=True, blank=True) 
@@ -116,7 +117,7 @@ class Units(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     
     def __str__(self):
-        return self.unit_name
+        return self.unit_name if self.unit_name else "Untitled Unit"
     
 class UnitDocumentType(models.Model):    
     unit = models.ForeignKey(Units, on_delete=models.CASCADE, related_name='unit_comp', null=True, blank=True) 
@@ -128,7 +129,9 @@ class UnitDocumentType(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     
     def __str__(self):
-        return self.unit.unit_name
+      return self.unit.unit_name if self.unit and self.unit.unit_name else "Untitled Unit"
+
+
     
 
 
@@ -230,4 +233,67 @@ class Charges(models.Model):
     
 
 
+ 
+class Tenancy(models.Model):
+    user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='tnnt', null=True, blank=True) 
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='tnn_comp', null=True, blank=True) 
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='tenancies', null=True, blank=True)
+    building = models.ForeignKey(Building, on_delete=models.CASCADE, related_name='tenancies', null=True, blank=True)
+    unit = models.ForeignKey(Units, on_delete=models.CASCADE, related_name='tenancies', null=True, blank=True)
     
+    rental_months = models.PositiveIntegerField(null=True, blank=True, help_text="Duration in months")
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    
+    no_payments = models.IntegerField(null=True, blank=True)
+    first_rent_due_on = models.DateField(null=True, blank=True)
+    
+    rent_per_frequency = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    total_rent_receivable = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    status_choices = [
+        ('pending', 'Pending'),
+        ('occupied', 'Occupied')  
+    ]
+    status = models.CharField(max_length=20, choices=status_choices, default='pending')
+    deposit = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    commision = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    remarks = models.TextField(null=True, blank=True)
+
+    def save(self, *args, **kwargs):
+        if self.rent_per_frequency and self.no_payments:
+            self.total_rent_receivable = self.rent_per_frequency * Decimal(self.no_payments)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.tenant} - {self.unit}"
+
+
+
+class PaymentSchedule(models.Model):
+    tenancy = models.ForeignKey('Tenancy', on_delete=models.CASCADE, related_name='tenanc', null=True, blank=True)
+    charge_type = models.ForeignKey('Charges', on_delete=models.CASCADE, related_name='char', null=True, blank=True)
+    
+    reason = models.CharField(max_length=255, null=True, blank=True)
+    due_date = models.DateField(null=True, blank=True)
+    
+    status_choices = [
+        ('pending', 'Pending'),
+        ('paid', 'Paid')  
+    ]
+    status = models.CharField(max_length=20, choices=status_choices, default='pending')
+    
+    amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    vat = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, editable=False)
+
+    def save(self, *args, **kwargs):
+        if self.amount is not None and self.vat is not None:
+            self.total = self.amount + self.vat
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.tenancy} - {self.charge_type} - Due: {self.due_date}"
+    
+ 
+
+ 

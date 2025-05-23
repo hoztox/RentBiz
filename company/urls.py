@@ -60,6 +60,12 @@ urlpatterns = [
     path('charges/create/',ChargesListCreateAPIView.as_view(), name='unit-type-list-create'),
     path('charges/<int:id>/', ChargesDetailAPIView.as_view(), name='unit-type-detail'),
     path('charges/company/<int:company_id>/', ChargesByCompanyAPIView.as_view(), name='unit-type-by-company'),
+    
+    # Tenancy
+    path('tenancies/create/', TenancyCreateView.as_view(), name='tenancy-create'),
+    path('tenancies/<int:pk>/', TenancyDetailView.as_view(), name='tenancy-detail'),
+    path('tenancies/company/<int:company_id>/', TenancyByCompanyAPIView.as_view(), name='tenancies-by-company'),
+    path('tenancies/pending/<int:company_id>/', PendingTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
 ]
 
 

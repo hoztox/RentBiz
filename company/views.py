@@ -18,6 +18,13 @@ from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
 
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth.hashers import check_password
+from .models import Company, Users
+
 class CompanyLoginView(APIView):
     def post(self, request, *args, **kwargs):
         username = request.data.get('username')
@@ -26,79 +33,75 @@ class CompanyLoginView(APIView):
         if not username or not password:
             return Response({'error': 'Username and password must be provided'}, status=status.HTTP_400_BAD_REQUEST)
 
-     
-        user = authenticate(request, username=username, password=password)
-
-        if user:
-            if hasattr(user, 'is_trash') and user.is_trash:
-                return Response({'error': 'User account not found'}, status=status.HTTP_401_UNAUTHORIZED)
-
-            if hasattr(user, 'status') and user.status == 'blocked':
+        # 1. Try to log in as User
+        try:
+            user = Users.objects.get(username=username)
+            if user.status == 'blocked':
                 return Response({'error': 'Your account is blocked. Please contact support.'}, status=status.HTTP_403_FORBIDDEN)
+            if not user.check_password(password):
+                raise Users.DoesNotExist()
 
-            if hasattr(user, 'company') and user.company and user.company.status == 'blocked':
-                return Response({'error': 'Your company is blocked. Please contact support.'}, status=status.HTTP_403_FORBIDDEN)
+            refresh = RefreshToken()
+            access_token = refresh.access_token
+            access_token['user_id'] = user.id
+            access_token['role'] = 'user'
 
-            refresh = RefreshToken.for_user(user)
+            refresh['user_id'] = user.id
+            refresh['role'] = 'user'
 
             return Response({
                 'id': user.id,
                 'username': user.username,
-                'first_name': getattr(user, 'first_name', ''),
-                'last_name': getattr(user, 'last_name', ''),
-                'email': getattr(user, 'email', ''),
-                'phone': getattr(user, 'phone', ''),
-                'status': getattr(user, 'status', ''),
-                'created_at': user.date_joined.strftime('%Y-%m-%d %H:%M:%S') if hasattr(user, 'date_joined') else '',
-                'company_id': user.company.id if hasattr(user, 'company') and user.company else None,
-                'role': 'user',
-                'access': str(refresh.access_token),
+                'name': user.name,
+                'email': user.email,
+                 
+                'status': user.status,
+                'created_at': user.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                'company_id': user.company.id if user.company else None,
+                'role': user.user_role,
+                'access': str(access_token),
                 'refresh': str(refresh),
             }, status=status.HTTP_200_OK)
 
-   
-       
+        except Users.DoesNotExist:
+            pass  
+
+      
         try:
             company = Company.objects.get(user_id=username)
+            if company.status == 'blocked':
+                return Response({'error': 'Your company is blocked. Please contact support.'}, status=status.HTTP_403_FORBIDDEN)
+            if not company.check_password(password):
+                raise Company.DoesNotExist()
+
+            refresh = RefreshToken()
+            access_token = refresh.access_token
+            access_token['user_id'] = company.user_id
+            access_token['role'] = 'company'
+
+            refresh['user_id'] = company.user_id
+            refresh['role'] = 'company'
+
+            return Response({
+                'id': company.id,
+                'user_id': company.user_id,
+                'company_name': company.company_name,
+                'company_admin_name': company.company_admin_name,
+                'username': company.user_id,
+                'phone_no1': company.phone_no1,
+                'phone_no2': company.phone_no2,
+                'email_address': company.email_address,
+                'created_at': company.date_joined.strftime('%Y-%m-%d %H:%M:%S'),
+                'company_logo': company.company_logo.url if company.company_logo else None,
+                'status': company.status,
+                'role': 'company',
+                'access': str(access_token),
+                'refresh': str(refresh),
+            }, status=status.HTTP_200_OK)
+
         except Company.DoesNotExist:
             return Response({'error': 'Invalid username or password'}, status=status.HTTP_401_UNAUTHORIZED)
 
-        if company.status == 'blocked':
-            return Response({'error': 'Your company is blocked. Please contact support.'}, status=status.HTTP_403_FORBIDDEN)
-
-        from django.contrib.auth.hashers import check_password
-
-        if not check_password(password, company.password):
-            return Response({'error': 'Invalid username or password'}, status=status.HTTP_401_UNAUTHORIZED)
-
-    
-        refresh = RefreshToken()
-        access_token = refresh.access_token
-
-        # Add custom claims
-        access_token['user_id'] = company.user_id
-        access_token['role'] = 'company'
-
-        refresh['user_id'] = company.user_id
-        refresh['role'] = 'company'
-
-        return Response({
-            'id': company.id,
-            'user_id': company.user_id,
-            'company_name': company.company_name,
-            'company_admin_name': company.company_admin_name,
-            'username': company.user_id,
-            'phone_no1': company.phone_no1,
-            'phone_no2': company.phone_no2,
-            'email_address': company.email_address,
-            'created_at': company.date_joined.strftime('%Y-%m-%d %H:%M:%S'),
-            'company_logo': company.company_logo.url if company.company_logo else None,
-            'status': company.status,
-            'date_joined': company.date_joined.strftime('%Y-%m-%d %H:%M:%S'),
-            'role': 'company',
-            'access': str(access_token),
-            'refresh': str(refresh),
-        }, status=status.HTTP_200_OK)
 
 
 
@@ -520,7 +523,7 @@ class ChargesListCreateAPIView(APIView):
     
 class ChargesByCompanyAPIView(APIView):
     def get(self, request, company_id):
-        unit_types = ChargeCode.objects.filter(company_id=company_id)
+        unit_types = Charges.objects.filter(company_id=company_id)
         serializer = ChargesGetSerializer(unit_types, many=True)
         return Response(serializer.data)
     
@@ -546,3 +549,90 @@ class ChargesDetailAPIView(APIView):
         unit_type = self.get_object(id)
         unit_type.delete()
         return Response({"message": "Deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
+
+
+
+class TenancyCreateView(APIView):
+    """Create a new tenancy with automatic payment schedule generation"""
+    
+    def post(self, request):
+        serializer = TenancyCreateSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            # Create tenancy with payment schedules
+            tenancy = serializer.save()
+            
+            # Return detailed response with payment schedules
+            detail_serializer = TenancyDetailSerializer(tenancy)
+            
+            return Response({
+                'success': True,
+                'message': 'Tenancy created successfully with payment schedules',
+                'tenancy': detail_serializer.data
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response({
+            'success': False,
+            'message': 'Validation failed',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class TenancyDetailView(APIView):
+    """Get tenancy details with payment schedules"""
+    
+    def get(self, request, pk):
+        try:
+            tenancy = Tenancy.objects.select_related('tenant', 'building', 'unit').get(pk=pk)
+            serializer = TenancyDetailSerializer(tenancy)
+            
+            return Response({
+                'success': True,
+                'tenancy': serializer.data
+            }, status=status.HTTP_200_OK)
+            
+        except Tenancy.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Tenancy not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+            
+    def put(self, request, pk):
+        try:
+            tenancy = Tenancy.objects.get(pk=pk)
+        except Tenancy.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Tenancy not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = TenancyCreateSerializer(tenancy, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                'success': True,
+                'message': 'Tenancy updated successfully',
+                'tenancy': serializer.data
+            }, status=status.HTTP_200_OK)
+        
+        return Response({
+            'success': False,
+            'message': 'Validation failed',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+        
+class TenancyByCompanyAPIView(APIView):
+
+    def get(self, request, company_id):
+ 
+        tenancies = Tenancy.objects.filter(company_id=company_id)
+        serializer = TenancyListSerializer(tenancies, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    
+    
+class PendingTenanciesByCompanyAPIView(APIView):
+    def get(self, request, company_id):
+        pending_tenancies = Tenancy.objects.filter(company_id=company_id, status='pending')
+        serializer = TenancyListSerializer(pending_tenancies, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
