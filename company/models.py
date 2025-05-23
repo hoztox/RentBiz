@@ -17,8 +17,9 @@ class Users(models.Model):
         blank=True,
         null=True,
         choices=[
-            ('Manager', 'Manager'),
-            ('Sales', 'Sales') 
+            ('Admin', 'Admin'),
+            ('Sales', 'Sales') ,
+            ('Store', 'Store') 
         ]
     )
     STATUS_CHOICES = [
@@ -227,4 +228,5 @@ class Charges(models.Model):
     def __str__(self):
         return self.name if self.name else "Untitled Unit"
     
-
+ 
+    
