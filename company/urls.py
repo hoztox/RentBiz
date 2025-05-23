@@ -4,6 +4,10 @@ from  .views import *
 
 urlpatterns = [
     
+    
+    # company login
+    path('company-login/', CompanyLoginView.as_view(), name='company-login'),
+    
     # user management
     path('users/create/', UserCreateAPIView.as_view(), name='user-create'),
     path('users/company/<int:company_id>/', UserListByCompanyAPIView.as_view(), name='user-list-by-company'),

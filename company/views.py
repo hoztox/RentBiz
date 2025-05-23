@@ -10,6 +10,96 @@ from django.conf import settings
 import logging
 from django.shortcuts import get_object_or_404
 logger = logging.getLogger(__name__)
+from datetime import datetime, timedelta
+import jwt
+ 
+from rest_framework import status
+from django.contrib.auth import authenticate
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.utils import timezone
+
+class CompanyLoginView(APIView):
+    def post(self, request, *args, **kwargs):
+        username = request.data.get('username')
+        password = request.data.get('password')
+
+        if not username or not password:
+            return Response({'error': 'Username and password must be provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Try authenticating user first
+        user = authenticate(request, username=username, password=password)
+
+        if user:
+            if hasattr(user, 'is_trash') and user.is_trash:
+                return Response({'error': 'User account not found'}, status=status.HTTP_401_UNAUTHORIZED)
+
+            if hasattr(user, 'status') and user.status == 'blocked':
+                return Response({'error': 'Your account is blocked. Please contact support.'}, status=status.HTTP_403_FORBIDDEN)
+
+            if hasattr(user, 'company') and user.company and user.company.status == 'blocked':
+                return Response({'error': 'Your company is blocked. Please contact support.'}, status=status.HTTP_403_FORBIDDEN)
+
+            refresh = RefreshToken.for_user(user)
+
+            return Response({
+                'id': user.id,
+                'username': user.username,
+                'first_name': getattr(user, 'first_name', ''),
+                'last_name': getattr(user, 'last_name', ''),
+                'email': getattr(user, 'email', ''),
+                'phone': getattr(user, 'phone', ''),
+                'status': getattr(user, 'status', ''),
+                'created_at': user.date_joined.strftime('%Y-%m-%d %H:%M:%S') if hasattr(user, 'date_joined') else '',
+                'company_id': user.company.id if hasattr(user, 'company') and user.company else None,
+                'role': 'user',
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+            }, status=status.HTTP_200_OK)
+
+   
+       
+        try:
+            company = Company.objects.get(user_id=username)
+        except Company.DoesNotExist:
+            return Response({'error': 'Invalid username or password'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if company.status == 'blocked':
+            return Response({'error': 'Your company is blocked. Please contact support.'}, status=status.HTTP_403_FORBIDDEN)
+
+        from django.contrib.auth.hashers import check_password
+
+        if not check_password(password, company.password):
+            return Response({'error': 'Invalid username or password'}, status=status.HTTP_401_UNAUTHORIZED)
+
+    
+        refresh = RefreshToken()
+        access_token = refresh.access_token
+
+        # Add custom claims
+        access_token['user_id'] = company.user_id
+        access_token['role'] = 'company'
+
+        refresh['user_id'] = company.user_id
+        refresh['role'] = 'company'
+
+        return Response({
+            'id': company.id,
+            'user_id': company.user_id,
+            'company_name': company.company_name,
+            'company_admin_name': company.company_admin_name,
+            'username': company.user_id,
+            'phone_no1': company.phone_no1,
+            'phone_no2': company.phone_no2,
+            'email_address': company.email_address,
+            'created_at': company.date_joined.strftime('%Y-%m-%d %H:%M:%S'),
+            'company_logo': company.company_logo.url if company.company_logo else None,
+            'status': company.status,
+            'date_joined': company.date_joined.strftime('%Y-%m-%d %H:%M:%S'),
+            'role': 'company',
+            'access': str(access_token),
+            'refresh': str(refresh),
+        }, status=status.HTTP_200_OK)
+
 
 
 
