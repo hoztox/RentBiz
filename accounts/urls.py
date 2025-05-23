@@ -6,7 +6,7 @@ urlpatterns = [
 
     
     path('companies/', CompanyListCreateAPIView.as_view(), name='company-list-create'),
-    path('company/create/', CompanyCreateAPIView.as_view(), name='company-list-create'),
+    path('company/create/', CompanyCreateAPIView.as_view(), name='company-create'),
     path('companies/<int:pk>/', CompanyDetailAPIView.as_view(), name='company-detail'),
        
 ]
