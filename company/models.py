@@ -41,6 +41,7 @@ class Users(models.Model):
         return self.name
 
 class MasterDocumentType(models.Model):
+    user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='user_comp', null=True, blank=True) 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='mas_type_comp', null=True, blank=True) 
     title = models.CharField(max_length=100, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -49,7 +50,7 @@ class MasterDocumentType(models.Model):
         return self.title
 
 class Building(models.Model):
- 
+    user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='buil_comp', null=True, blank=True) 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='building_comp', null=True, blank=True) 
     building_name = models.CharField(max_length=100,null=True, blank=True)
     building_no = models.CharField(max_length=100,null=True, blank=True)
@@ -86,6 +87,7 @@ class DocumentType(models.Model):
 
 
 class UnitType(models.Model):
+    user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='unit_type_comp', null=True, blank=True) 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='unit_type_comp', null=True, blank=True) 
     title = models.CharField(max_length=100, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -94,7 +96,7 @@ class UnitType(models.Model):
         return self.title
 
 class Units(models.Model):
-        
+    user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='uni_comp', null=True, blank=True)    
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='unit_comp', null=True, blank=True) 
     building = models.ForeignKey(Building, on_delete=models.CASCADE, related_name='unit_building', null=True, blank=True) 
     address = models.CharField(max_length=255,null=True, blank=True)    
@@ -130,6 +132,7 @@ class UnitDocumentType(models.Model):
 
 
 class IDType(models.Model):
+    user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='id_comp', null=True, blank=True) 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='id_comp', null=True, blank=True) 
     title = models.CharField(max_length=100, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -139,6 +142,7 @@ class IDType(models.Model):
     
     
 class Currency(models.Model):
+    user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='id_type_comp', null=True, blank=True) 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='currency_comp', null=True, blank=True) 
     country = models.CharField(max_length=100, null=True, blank=True)
     currency = models.CharField(max_length=100, null=True, blank=True)
@@ -151,6 +155,7 @@ class Currency(models.Model):
     
     
 class Tenant(models.Model):
+    user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='tene_comp', null=True, blank=True) 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='tenant_comp', null=True, blank=True) 
     tenant_name = models.CharField(max_length=100,null=True, blank=True)
     nationality = models.CharField(max_length=100,null=True, blank=True)
@@ -202,6 +207,7 @@ class TenantDocumentType(models.Model):
 
 
 class ChargeCode(models.Model):
+    user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='charge_comp', null=True, blank=True) 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='charge_comp', null=True, blank=True) 
     title = models.CharField(max_length=100, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -211,6 +217,7 @@ class ChargeCode(models.Model):
     
     
 class Charges(models.Model):
+    user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='ch_comp', null=True, blank=True) 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='charges_comp', null=True, blank=True) 
     name = models.CharField(max_length=100, null=True, blank=True)
     charge_code = models.ForeignKey(ChargeCode, on_delete=models.CASCADE, related_name='charge_code_comp', null=True, blank=True) 
@@ -220,3 +227,4 @@ class Charges(models.Model):
     def __str__(self):
         return self.name if self.name else "Untitled Unit"
     
+

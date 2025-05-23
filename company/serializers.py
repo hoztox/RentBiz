@@ -139,6 +139,7 @@ class UnitDocumentTypeSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class UnitGetSerializer(serializers.ModelSerializer):
+    user = UserSerializer()
     unit_comp = UnitDocumentTypeSerializer(many=True, required=False)
     unit_type = UnitTypeSerializer(required=False)
     class Meta:
@@ -199,6 +200,7 @@ class TenantDocumentTypeSerializer(serializers.ModelSerializer):
 
 
 class TenantGetSerializer(serializers.ModelSerializer):
+    user = UserSerializer()
     id_type = IDTypeSerializer( required=False)
     sponser_id_type = IDTypeSerializer( required=False)
     tenant_comp = TenantDocumentTypeSerializer(many=True, required=False) 
@@ -249,6 +251,7 @@ class ChargesSerializer(serializers.ModelSerializer):
         
         
 class ChargesGetSerializer(serializers.ModelSerializer):
+    user = UserSerializer()
     charge_code = ChargeCodeSerializer(required=False)
     class Meta:
         model = Charges
