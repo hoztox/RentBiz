@@ -126,7 +126,7 @@ class UserCreateAPIView(APIView):
             "name": user.name,
             "email": user.email,
             "username": user.username,
-            "phone": user.phone,
+           
             "company_name": user.company.company_name if user.company else "N/A"
         }
 

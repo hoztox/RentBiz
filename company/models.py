@@ -9,7 +9,7 @@ class Users(models.Model):
     username = models.CharField(max_length=100, unique=True,null=True, blank=True)
     email = models.EmailField(unique=True,null=True, blank=True)
     password = models.CharField(max_length=100,null=True, blank=True)
-    phone = models.CharField(max_length=15, unique=True,null=True, blank=True)  
+   
     company_logo = models.ImageField(upload_to='user_logo/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     user_role = models.CharField(
