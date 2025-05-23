@@ -26,7 +26,7 @@ class CompanyLoginView(APIView):
         if not username or not password:
             return Response({'error': 'Username and password must be provided'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Try authenticating user first
+     
         user = authenticate(request, username=username, password=password)
 
         if user:

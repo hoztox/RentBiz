@@ -5,11 +5,11 @@ from accounts.models import *
 
 class Users(models.Model):   
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='user_comp', null=True, blank=True) 
-    name = models.CharField(max_length=100)
-    username = models.CharField(max_length=100, unique=True)
-    email = models.EmailField(unique=True)
-    password = models.CharField(max_length=100)
-    phone = models.CharField(max_length=15, unique=True)  
+    name = models.CharField(max_length=100,null=True, blank=True)
+    username = models.CharField(max_length=100, unique=True,null=True, blank=True)
+    email = models.EmailField(unique=True,null=True, blank=True)
+    password = models.CharField(max_length=100,null=True, blank=True)
+    phone = models.CharField(max_length=15, unique=True,null=True, blank=True)  
     company_logo = models.ImageField(upload_to='user_logo/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     user_role = models.CharField(
@@ -228,5 +228,6 @@ class Charges(models.Model):
     def __str__(self):
         return self.name if self.name else "Untitled Unit"
     
- 
+
+
     
