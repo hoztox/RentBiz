@@ -49,7 +49,7 @@ class MasterDocumentType(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     
     def __str__(self):
-        return self.title
+        return self.title if self.title else "Unnamed title"
 
 class Building(models.Model):
     user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='buil_comp', null=True, blank=True) 
