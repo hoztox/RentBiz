@@ -273,7 +273,7 @@ class Charges(models.Model):
     user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='ch_comp', null=True, blank=True) 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='charges_comp', null=True, blank=True) 
     name = models.CharField(max_length=100, null=True, blank=True)
-    charge_code = models.ForeignKey(ChargeCode, on_delete=models.CASCADE, related_name='charge_code_comp', null=True, blank=True) 
+    charge_code = models.ForeignKey(ChargeCode, on_delete=models.SET_NULL, null=True, blank=True, related_name='charge_code_comp') 
     vat_percentage = models.FloatField(null=True, blank=True)  
     created_at = models.DateTimeField(auto_now_add=True)
     
