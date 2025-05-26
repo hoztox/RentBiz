@@ -185,13 +185,74 @@ class UserDetailAPIView(APIView):
         user.delete()
         return Response({"message": "User deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
 
-
+from collections import defaultdict
 class BuildingCreateView(APIView):
     def post(self, request, *args, **kwargs):
-        serializer = BuildingSerializer(data=request.data)
+        print("Request data:", request.data)
+        
+  
+        def get_value_or_none(key, convert_type=None):
+            value = request.data.get(key, '')
+            if value == '' or value is None:
+                return None
+            if convert_type:
+                try:
+                    return convert_type(value)
+                except (ValueError, TypeError):
+                    return None
+            return value
+        
+     
+        building_data = {
+            'company': request.data.get('company'),
+            'building_name': request.data.get('building_name'),
+            'building_no': request.data.get('building_no'),
+            'plot_no': request.data.get('plot_no'),
+            'description': get_value_or_none('description'),
+            'remarks': get_value_or_none('remarks'),
+            'latitude': get_value_or_none('latitude', float), 
+            'longitude': get_value_or_none('longitude', float),  
+            'status': request.data.get('status'),
+            'land_mark': get_value_or_none('land_mark'),
+            'building_address': request.data.get('building_address'),
+        }
+        
+  
+        documents_data = []
+        document_groups = defaultdict(dict)
+        
+       
+        for key, value in request.data.items():
+            if key.startswith('build_comp['):
+               
+                import re
+                match = re.match(r'build_comp\[(\d+)\]\[(\w+)\]', key)
+                if match:
+                    index = int(match.group(1))
+                    field_name = match.group(2)
+                    document_groups[index][field_name] = value
+        
+      
+        for index in sorted(document_groups.keys()):
+            doc_data = document_groups[index]
+       
+            if 'upload_file' in doc_data:
+         
+                documents_data.append(doc_data)
+        
+   
+        final_data = building_data.copy()
+        final_data['build_comp'] = documents_data
+        
+        print("Processed data:", final_data)
+        
+        
+        serializer = BuildingSerializer(data=final_data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
+        
+        print("Serializer errors:", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     
@@ -636,3 +697,23 @@ class PendingTenanciesByCompanyAPIView(APIView):
         pending_tenancies = Tenancy.objects.filter(company_id=company_id, status='pending')
         serializer = TenancyListSerializer(pending_tenancies, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+class OccupiedTenanciesByCompanyAPIView(APIView):
+    def get(self, request, company_id):
+        pending_tenancies = Tenancy.objects.filter(company_id=company_id, status='occupied')
+        serializer = TenancyListSerializer(pending_tenancies, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class TerminatiionTenanciesByCompanyAPIView(APIView):
+    def get(self, request, company_id):
+        pending_tenancies = Tenancy.objects.filter(company_id=company_id,is_termination=True )
+        serializer = TenancyListSerializer(pending_tenancies, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)    
+    
+
+class CloseTenanciesByCompanyAPIView(APIView):
+    def get(self, request, company_id):
+        pending_tenancies = Tenancy.objects.filter(company_id=company_id,is_close=True )
+        serializer = TenancyListSerializer(pending_tenancies, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)    

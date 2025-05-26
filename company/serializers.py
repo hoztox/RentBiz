@@ -113,8 +113,9 @@ class BuildingSerializer(serializers.ModelSerializer):
         documents_data = validated_data.pop('build_comp', [])
         building = Building.objects.create(**validated_data)
         for doc_data in documents_data:
-            DocumentType.objects.create(Building=building, **doc_data)
+            DocumentType.objects.create(building=building, **doc_data)
         return building
+
     def update(self, instance, validated_data):
         documents_data = validated_data.pop('build_comp', [])
 
@@ -128,6 +129,8 @@ class BuildingSerializer(serializers.ModelSerializer):
             DocumentType.objects.create(Building=instance, **doc_data)
 
         return instance
+    
+    
 class UnitTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = UnitType

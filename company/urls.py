@@ -66,6 +66,11 @@ urlpatterns = [
     path('tenancies/<int:pk>/', TenancyDetailView.as_view(), name='tenancy-detail'),
     path('tenancies/company/<int:company_id>/', TenancyByCompanyAPIView.as_view(), name='tenancies-by-company'),
     path('tenancies/pending/<int:company_id>/', PendingTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
+    path('tenancies/occupied/<int:company_id>/', OccupiedTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
+    path('tenancies/termination/<int:company_id>/', TerminatiionTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
+    path('tenancies/close/<int:company_id>/', CloseTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
+    
+    
 ]
 
 
