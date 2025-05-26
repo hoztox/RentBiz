@@ -591,7 +591,7 @@ class ChargesByCompanyAPIView(APIView):
  
 class ChargesDetailAPIView(APIView):
     def get_object(self, id):
-        return get_object_or_404(ChargeCode, id=id)
+        return get_object_or_404(Charges, id=id)
 
     def get(self, request, id):
         unit_type = self.get_object(id)
