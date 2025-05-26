@@ -256,7 +256,7 @@ class ChargesSerializer(serializers.ModelSerializer):
         
 class ChargesGetSerializer(serializers.ModelSerializer):
     user = UserSerializer()
-    charge_code = ChargeCodeSerializer(required=False)
+    charge_code = ChargeCodeSerializer()
     class Meta:
         model = Charges
         fields = '__all__'
