@@ -23,6 +23,7 @@ urlpatterns = [
     path('units/create/', UnitCreateView.as_view(), name='unit-create'),
     path('units/<int:pk>/', UnitDetailView.as_view(), name='unit-detail'),
     path('units/company/<int:company_id>/', UnitsByCompanyView.as_view(), name='units-by-company'),
+    path('units/by-building/<int:company_id>/', UnitsByCompanyAPIView.as_view(), name='units-by-company'),
     
     # unit type in masters
     path('unit-types/create/', UnitTypeListCreateAPIView.as_view(), name='unit-type-list-create'),
@@ -66,10 +67,10 @@ urlpatterns = [
     path('tenancies/<int:pk>/', TenancyDetailView.as_view(), name='tenancy-detail'),
     path('tenancies/company/<int:company_id>/', TenancyByCompanyAPIView.as_view(), name='tenancies-by-company'),
     path('tenancies/pending/<int:company_id>/', PendingTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
-    path('tenancies/occupied/<int:company_id>/', OccupiedTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
+    path('tenancies/occupied/<int:company_id>/', ActiveTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
     path('tenancies/termination/<int:company_id>/', TerminatiionTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
     path('tenancies/close/<int:company_id>/', CloseTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
-    
+   
     
 ]
 

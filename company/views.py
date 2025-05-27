@@ -771,9 +771,9 @@ class PendingTenanciesByCompanyAPIView(APIView):
         serializer = TenancyListSerializer(pending_tenancies, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
-class OccupiedTenanciesByCompanyAPIView(APIView):
+class ActiveTenanciesByCompanyAPIView(APIView):
     def get(self, request, company_id):
-        pending_tenancies = Tenancy.objects.filter(company_id=company_id, status='occupied')
+        pending_tenancies = Tenancy.objects.filter(company_id=company_id, status='active')
         serializer = TenancyListSerializer(pending_tenancies, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -790,3 +790,25 @@ class CloseTenanciesByCompanyAPIView(APIView):
         pending_tenancies = Tenancy.objects.filter(company_id=company_id,is_close=True )
         serializer = TenancyListSerializer(pending_tenancies, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)    
+
+
+ 
+
+class UnitsByCompanyAPIView(APIView):
+    def get(self, request, company_id):
+ 
+        units = Units.objects.filter(company_id=company_id)
+ 
+        building_data = []
+        buildings = units.values_list('building', flat=True).distinct()
+        for building_id in buildings:
+            building_units = units.filter(building_id=building_id)
+            building_name = Building.objects.get(id=building_id).building_name if building_id else "No Building Assigned"
+            serialized_units = UnitSerializer(building_units, many=True).data
+            building_data.append({
+                "building_id": building_id,
+                "building_name": building_name,
+                "units": serialized_units
+            })
+
+        return Response(building_data, status=status.HTTP_200_OK)
