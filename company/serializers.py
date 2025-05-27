@@ -146,6 +146,7 @@ class UnitGetSerializer(serializers.ModelSerializer):
     user = UserSerializer()
     unit_comp = UnitDocumentTypeSerializer(many=True, required=False)
     unit_type = UnitTypeSerializer(required=False)
+    building = BuildingSerializer()
     class Meta:
         model = Units
         fields = '__all__'
