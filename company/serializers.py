@@ -457,24 +457,7 @@ class TenancyListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tenancy
-        fields = [
-            'id',
-            'tenant_name',
-            'company_name',
-            'building',
-            'unit',
-            'rental_months',
-            'start_date',
-            'end_date',
-            'no_payments',
-            'first_rent_due_on',
-            'rent_per_frequency',
-            'total_rent_receivable',
-            'deposit',
-            'commision',
-            'remarks',
-            'payment_schedules',   
-        ]
+        fields = '__all__'
 
 
  
