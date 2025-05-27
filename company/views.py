@@ -295,13 +295,50 @@ class BuildingByCompanyView(APIView):
 
 
 
+import json
+
 class UnitCreateView(APIView):
     def post(self, request):
-        serializer = UnitSerializer(data=request.data)
+        print("Raw request data:", request.data)
+        
+        # Extract basic unit data
+        unit_data = {}
+        for key, value in request.data.items():
+            if key not in ['unit_comp_json'] and not key.startswith('document_file_'):
+                unit_data[key] = value
+        
+       
+        unit_comp_json = request.data.get('unit_comp_json')
+        if unit_comp_json:
+            try:
+                unit_comp_data = json.loads(unit_comp_json)
+                
+          
+                for doc_data in unit_comp_data:
+                    file_index = doc_data.pop('file_index', None)
+                    if file_index is not None:
+                        file_key = f'document_file_{file_index}'
+                        if file_key in request.FILES:
+                            doc_data['upload_file'] = request.FILES[file_key]
+                
+                unit_data['unit_comp'] = unit_comp_data
+                
+            except json.JSONDecodeError:
+                return Response(
+                    {'error': 'Invalid JSON in unit_comp_json'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        print("Processed unit data:", unit_data)
+        
+        serializer = UnitSerializer(data=unit_data)
         if serializer.is_valid():
             serializer.save()
+            print("Successfully created unit:", serializer.data)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            print("Serializer errors:", serializer.errors)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 class UnitDetailView(APIView):
     def get(self, request, pk):
@@ -487,14 +524,55 @@ class CurrencyByCompanyAPIView(APIView):
         return Response(serializer.data)
 
 
+ 
+
+
+ 
+ 
+
 class TenantCreateView(APIView):
-    def post(self, request, *args, **kwargs):
-        serializer = TenantSerializer(data=request.data)
+    def post(self, request):
+        print("Raw request data:", request.data)
+
+        tenant_data = {}
+        for key, value in request.data.items():
+            if key not in ['document_comp_json'] and not key.startswith('document_file_'):
+                tenant_data[key] = value
+
+        document_comp_json = request.data.get('document_comp_json')
+
+        if document_comp_json:
+            try:
+                document_data = json.loads(document_comp_json)
+
+                for doc in document_data:
+                    file_index = doc.pop('file_index', None)
+                    if file_index is not None:
+                        file_key = f'document_file_{file_index}'
+                        if file_key in request.FILES:
+                            doc['upload_file'] = request.FILES[file_key]
+
+                tenant_data['tenant_documents'] = document_data
+
+            except json.JSONDecodeError:
+                return Response({'error': 'Invalid JSON in document_comp_json'}, status=status.HTTP_400_BAD_REQUEST)
+
+        print("Processed tenant data:", tenant_data)
+
+        serializer = TenantSerializer(data=tenant_data)
         if serializer.is_valid():
-            serializer.save()
+            tenant = serializer.save()
+            print("Successfully created tenant:", serializer.data)
+
+            # Save related documents
+            for doc in tenant_data.get('tenant_documents', []):
+                TenantDocumentType.objects.create(tenant=tenant, **doc)
+
             return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+        else:
+            print("Serializer errors:", serializer.errors)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
     
 class TenantDetailView(APIView):
     def get_object(self, pk):
