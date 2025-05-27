@@ -552,7 +552,7 @@ class TenantCreateView(APIView):
                         if file_key in request.FILES:
                             doc['upload_file'] = request.FILES[file_key]
 
-                tenant_data['tenant_documents'] = document_data
+                tenant_data['tenant_comp'] = document_data
 
             except json.JSONDecodeError:
                 return Response({'error': 'Invalid JSON in document_comp_json'}, status=status.HTTP_400_BAD_REQUEST)
@@ -563,11 +563,6 @@ class TenantCreateView(APIView):
         if serializer.is_valid():
             tenant = serializer.save()
             print("Successfully created tenant:", serializer.data)
-
-            # Save related documents
-            for doc in tenant_data.get('tenant_documents', []):
-                TenantDocumentType.objects.create(tenant=tenant, **doc)
-
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         else:
             print("Serializer errors:", serializer.errors)
