@@ -117,18 +117,41 @@ class BuildingSerializer(serializers.ModelSerializer):
         return building
 
     def update(self, instance, validated_data):
-        documents_data = validated_data.pop('build_comp', [])
+        documents_data = validated_data.pop('build_comp', None)
 
+        # Update building fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
+        if documents_data is not None:
+            existing_ids = []
+            for doc_data in documents_data:
+                doc_id = doc_data.get('id', None)
+                if doc_id:
+                    try:
+                        doc_instance = instance.build_comp.get(id=doc_id)
+                        for attr, value in doc_data.items():
+                            if attr != 'id':
+                                setattr(doc_instance, attr, value)
+                        doc_instance.save()
+                        existing_ids.append(doc_instance.id)
+                    except DocumentType.DoesNotExist:
+                
+                        doc_data.pop('id', None)
+                        new_doc = DocumentType.objects.create(building=instance, **doc_data)
+                        existing_ids.append(new_doc.id)
+                else:
+                    new_doc = DocumentType.objects.create(building=instance, **doc_data)
+                    existing_ids.append(new_doc.id)
 
-        instance.build_comp.all().delete()
-        for doc_data in documents_data:
-            DocumentType.objects.create(Building=instance, **doc_data)
+        
+            instance.build_comp.exclude(id__in=existing_ids).delete()
 
         return instance
+
+
+     
     
     
 class UnitTypeSerializer(serializers.ModelSerializer):
@@ -166,18 +189,37 @@ class UnitSerializer(serializers.ModelSerializer):
         return unit
     
     def update(self, instance, validated_data):
-        documents_data = validated_data.pop('unit_comp', [])
-
+ 
+        documents_data = validated_data.pop('unit_comp', None)
+ 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
+
+     
+        if documents_data is not None:
+            existing_docs = {doc.id: doc for doc in instance.unit_comp.all()}
+            updated_ids = []
+
+            for doc_data in documents_data:
+                doc_id = doc_data.get('id', None)
+                if doc_id and doc_id in existing_docs:
+            
+                    doc_instance = existing_docs[doc_id]
+                    for attr, value in doc_data.items():
+                        setattr(doc_instance, attr, value)
+                    doc_instance.save()
+                    updated_ids.append(doc_id)
+                else:
+       
+                    UnitDocumentType.objects.create(unit=instance, **doc_data)
  
-        instance.unit_comp.all().delete()
-        for doc_data in documents_data:
-            UnitDocumentType.objects.create(unit=instance, **doc_data)
+            for doc_id in existing_docs:
+                if doc_id not in updated_ids:
+                    existing_docs[doc_id].delete()
 
         return instance
-    
+
     
 
 class MasterDocumentTypeSerializer(serializers.ModelSerializer):
@@ -462,7 +504,6 @@ class TenancyListSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
- 
 
 
  
