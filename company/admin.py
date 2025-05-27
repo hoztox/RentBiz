@@ -20,3 +20,6 @@ admin.site.register(Currency)
 
 admin.site.register(Tenant)
 admin.site.register(TenantDocumentType)
+
+admin.site.register(Tenancy)
+admin.site.register(PaymentSchedule)

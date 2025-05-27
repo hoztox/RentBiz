@@ -4,6 +4,10 @@ from  .views import *
 
 urlpatterns = [
     
+    
+    # company login
+    path('company-login/', CompanyLoginView.as_view(), name='company-login'),
+    
     # user management
     path('users/create/', UserCreateAPIView.as_view(), name='user-create'),
     path('users/company/<int:company_id>/', UserListByCompanyAPIView.as_view(), name='user-list-by-company'),
@@ -18,7 +22,9 @@ urlpatterns = [
     # unit Properties
     path('units/create/', UnitCreateView.as_view(), name='unit-create'),
     path('units/<int:pk>/', UnitDetailView.as_view(), name='unit-detail'),
+    path('units/<int:pk>/edit/', UnitEditView.as_view(), name='unit-edit'),
     path('units/company/<int:company_id>/', UnitsByCompanyView.as_view(), name='units-by-company'),
+    path('units/by-building/<int:company_id>/', UnitsByCompanyAPIView.as_view(), name='units-by-company'),
     
     # unit type in masters
     path('unit-types/create/', UnitTypeListCreateAPIView.as_view(), name='unit-type-list-create'),
@@ -56,6 +62,17 @@ urlpatterns = [
     path('charges/create/',ChargesListCreateAPIView.as_view(), name='unit-type-list-create'),
     path('charges/<int:id>/', ChargesDetailAPIView.as_view(), name='unit-type-detail'),
     path('charges/company/<int:company_id>/', ChargesByCompanyAPIView.as_view(), name='unit-type-by-company'),
+    
+    # Tenancy
+    path('tenancies/create/', TenancyCreateView.as_view(), name='tenancy-create'),
+    path('tenancies/<int:pk>/', TenancyDetailView.as_view(), name='tenancy-detail'),
+    path('tenancies/company/<int:company_id>/', TenancyByCompanyAPIView.as_view(), name='tenancies-by-company'),
+    path('tenancies/pending/<int:company_id>/', PendingTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
+    path('tenancies/occupied/<int:company_id>/', ActiveTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
+    path('tenancies/termination/<int:company_id>/', TerminatiionTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
+    path('tenancies/close/<int:company_id>/', CloseTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
+   
+    
 ]
 
 
