@@ -982,7 +982,21 @@ class TenancyDetailView(APIView):
             'message': 'Validation failed',
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
-        
+    
+    def delete(self, request, pk):
+        try:
+            tenancy = Tenancy.objects.get(pk=pk)
+            tenancy.delete()
+            return Response({
+                'success': True,
+                'message': 'Tenancy deleted successfully'
+            }, status=status.HTTP_204_NO_CONTENT)
+        except Tenancy.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Tenancy not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+      
 class TenancyByCompanyAPIView(APIView):
 
     def get(self, request, company_id):
