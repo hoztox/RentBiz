@@ -959,29 +959,14 @@ class TenancyDetailView(APIView):
                 'message': 'Tenancy not found'
             }, status=status.HTTP_404_NOT_FOUND)
             
-    def put(self, request, pk):
-        try:
-            tenancy = Tenancy.objects.get(pk=pk)
-        except Tenancy.DoesNotExist:
-            return Response({
-                'success': False,
-                'message': 'Tenancy not found'
-            }, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = TenancyCreateSerializer(tenancy, data=request.data)
+    def put(self, request, pk, format=None):
+        tenancy = get_object_or_404(Tenancy, pk=pk)
+        serializer = TenancyCreateSerializer(tenancy, data=request.data, partial=False)  # For full update
         if serializer.is_valid():
             serializer.save()
-            return Response({
-                'success': True,
-                'message': 'Tenancy updated successfully',
-                'tenancy': serializer.data
-            }, status=status.HTTP_200_OK)
-        
-        return Response({
-            'success': False,
-            'message': 'Validation failed',
-            'errors': serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     def delete(self, request, pk):
         try:
