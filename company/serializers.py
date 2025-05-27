@@ -450,8 +450,10 @@ class TenancyDetailSerializer(serializers.ModelSerializer):
         
         
 class TenancyListSerializer(serializers.ModelSerializer):
-    tenant_name = serializers.CharField(source='tenant.name', read_only=True)
+    tenant = TenantSerializer()
     company_name = serializers.CharField(source='company.name', read_only=True)
+    building = BuildingSerializer()
+    unit = UnitGetSerializer()
     payment_schedules = PaymentScheduleSerializer(many=True, read_only=True, source='tenanc')  
  
 
