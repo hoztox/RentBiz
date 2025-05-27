@@ -66,8 +66,8 @@ class Building(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     STATUS_CHOICES = [
         ('active', 'Active'),
-        ('inactive', 'Inactive'),
-        ('pending','Pending'),
+        ('inactive', 'Inactive')
+       
     ]
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     code = models.CharField(max_length=20, unique=True, blank=True, null=True)
@@ -126,8 +126,10 @@ class Units(models.Model):
     premise_no = models.CharField(max_length=100,null=True, blank=True) 
     code = models.CharField(max_length=20, unique=True, blank=True, null=True)  
     STATUS_CHOICES = [
-        ('inactive', 'inactive'),
-        ('pending', 'pending'),
+        ('occupied', 'Occupied'),
+        ('renovation', 'Renovation'),
+         ('vacant', 'Vacant'),
+          ('disputed', 'Disputed'),
     ]
     unit_status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     created_at = models.DateTimeField(auto_now_add=True)
