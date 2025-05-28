@@ -371,7 +371,8 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                         amount=charge_data.get('amount'),
                         reason=charge_data.get('reason'),
                         due_date=charge_data.get('due_date'),
-                      
+                        vat=charge_data.get('vat'),
+                        total=charge_data.get('total'),
                     )
                 else:
                  
@@ -482,7 +483,10 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                             charge_type=charge_type,
                             amount=charge_data.get('amount'),
                             reason=charge_data.get('reason'),
-                            due_date=charge_data.get('due_date')
+                            due_date=charge_data.get('due_date'),
+                            vat=charge_data.get('vat'),
+                            total=charge_data.get('total'),
+                            
                         )
                 except Exception as e:
                     print(f"Error updating additional charge: {e}")
