@@ -110,7 +110,7 @@ class UnitType(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     
     def __str__(self):
-        return self.title
+        return self.title if self.title else "No title"
 
 class Units(models.Model):
     user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='uni_comp', null=True, blank=True)    
@@ -174,7 +174,7 @@ class IDType(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     
     def __str__(self):
-        return self.title
+        return self.title if self.title else "No title"
     
     
 class Currency(models.Model):
@@ -187,8 +187,7 @@ class Currency(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     
     def __str__(self):
-        return self.country
-    
+        return self.country if self.country else "No country"
     
 class Tenant(models.Model):
     user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='tene_comp', null=True, blank=True) 
@@ -268,7 +267,7 @@ class ChargeCode(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     
     def __str__(self):
-        return self.title
+        return self.title if self.title else "No title"
        
 class Charges(models.Model):
     user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='ch_comp', null=True, blank=True) 
