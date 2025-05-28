@@ -72,6 +72,7 @@ urlpatterns = [
     path('tenancies/occupied/<int:company_id>/', ActiveTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
     path('tenancies/termination/<int:company_id>/', TerminatiionTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
     path('tenancies/close/<int:company_id>/', CloseTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
+    path('tenancy/<int:pk>/confirm/', ConfirmTenancyView.as_view(), name='confirm-tenancy'),
    
     
 ]

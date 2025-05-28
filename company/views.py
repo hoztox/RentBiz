@@ -1040,3 +1040,23 @@ class BuildingsWithVacantUnitsView(APIView):
         ).distinct()
         serializer = BuildingSerializer(buildings, many=True)
         return Response(serializer.data)
+    
+    
+class ConfirmTenancyView(APIView):
+    def post(self, request, pk):
+        tenancy = get_object_or_404(Tenancy, pk=pk)
+
+        if tenancy.status == 'active':
+            return Response({'detail': 'Tenancy is already active.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        unit = tenancy.unit
+        if not unit:
+            return Response({'detail': 'Tenancy has no unit assigned.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        tenancy.status = 'active'
+        tenancy.save()
+
+        unit.status = 'occupied'
+        unit.save()
+
+        return Response({'detail': 'Tenancy confirmed and unit status set to occupied.'}, status=status.HTTP_200_OK)
