@@ -316,6 +316,15 @@ class PaymentScheduleSerializer(serializers.ModelSerializer):
     class Meta:
         model = PaymentSchedule
         fields = '__all__'
+        extra_kwargs = {
+            'tenancy': {'required': False, 'allow_null': True},
+            'charge_type': {'required': False, 'allow_null': True},
+            'amount': {'required': False, 'allow_null': True},
+            'reason': {'required': False, 'allow_null': True},
+            'due_date': {'required': False, 'allow_null': True},
+            'vat': {'required': False, 'allow_null': True},
+            'total': {'required': False, 'allow_null': True},
+        }
 
 
 class AdditionalChargeSerializer(serializers.ModelSerializer):
@@ -324,18 +333,27 @@ class AdditionalChargeSerializer(serializers.ModelSerializer):
     class Meta:
         model = AdditionalCharge
         fields = '__all__'
+        extra_kwargs = {
+            'tenancy': {'required': False, 'allow_null': True},
+            'charge_type': {'required': False, 'allow_null': True},
+            'amount': {'required': False, 'allow_null': True},
+            'reason': {'required': False, 'allow_null': True},
+            'due_date': {'required': False, 'allow_null': True},
+            'vat': {'required': False, 'allow_null': True},
+            'total': {'required': False, 'allow_null': True},
+        }
 
 
 class TenancyCreateSerializer(serializers.ModelSerializer):
     additional_charges = AdditionalChargeSerializer(many=True, required=False)
-    payment_schedules = PaymentScheduleSerializer(many=True, read_only=True)
+    payment_schedules = PaymentScheduleSerializer(many=True, read_only=True,required=False)
 
     class Meta:
         model = Tenancy
         fields = '__all__'
 
     def validate(self, data):
-        # ... keep your validation as is ...
+     
         return data
 
     @transaction.atomic
