@@ -269,8 +269,7 @@ class ChargeCode(models.Model):
     
     def __str__(self):
         return self.title
-    
-    
+       
 class Charges(models.Model):
     user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='ch_comp', null=True, blank=True) 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='charges_comp', null=True, blank=True) 
@@ -282,9 +281,6 @@ class Charges(models.Model):
     def __str__(self):
         return self.name if self.name else "Untitled Unit"
     
-
-
- 
 
 class Tenancy(models.Model):
     user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='tnnt', null=True, blank=True) 
@@ -339,7 +335,7 @@ class Tenancy(models.Model):
 
 
     def generate_tenancy_code(self):
-        # Always assign a new base code
+
         existing_codes = Tenancy.objects.filter(tenancy_code__isnull=False)
 
         base_numbers = []
@@ -379,20 +375,17 @@ class Tenancy(models.Model):
 
 class PaymentSchedule(models.Model):
     tenancy = models.ForeignKey('Tenancy', on_delete=models.CASCADE, related_name='payment_schedules', null=True, blank=True)
-    charge_type = models.ForeignKey('Charges', on_delete=models.CASCADE, related_name='char', null=True, blank=True)
-    
+    charge_type = models.ForeignKey('Charges', on_delete=models.CASCADE, related_name='char', null=True, blank=True)   
     reason = models.CharField(max_length=255, null=True, blank=True)
-    due_date = models.DateField(null=True, blank=True)
-    
+    due_date = models.DateField(null=True, blank=True)   
     status_choices = [
         ('pending', 'Pending'),
         ('paid', 'Paid')  
     ]
-    status = models.CharField(max_length=20, choices=status_choices, default='pending')
-    
+    status = models.CharField(max_length=20, choices=status_choices, default='pending')   
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     vat = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, editable=False)
+    total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
 
     def save(self, *args, **kwargs):
         if self.amount is not None and self.vat is not None:
@@ -406,22 +399,21 @@ class PaymentSchedule(models.Model):
 
 class AdditionalCharge(models.Model):
     tenancy = models.ForeignKey(Tenancy, on_delete=models.CASCADE, related_name='additional_charges', null=True, blank=True)
-    charge_type = models.ForeignKey(Charges, on_delete=models.CASCADE, related_name='chvcar', null=True, blank=True)
-    
+    charge_type = models.ForeignKey(Charges, on_delete=models.CASCADE, related_name='chvcar', null=True, blank=True)   
     reason = models.CharField(max_length=255, null=True, blank=True)
-    due_date = models.DateField(null=True, blank=True)
-    
+    due_date = models.DateField(null=True, blank=True)   
     status_choices = [
         ('pending', 'Pending'),
         ('paid', 'Paid')  
     ]
-    status = models.CharField(max_length=20, choices=status_choices, default='pending')
-    
+    status = models.CharField(max_length=20, choices=status_choices, default='pending')   
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     vat = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, editable=False)
+    total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
 
     def save(self, *args, **kwargs):
         if self.amount is not None and self.vat is not None:
             self.total = self.amount + self.vat
         super().save(*args, **kwargs)
+
+

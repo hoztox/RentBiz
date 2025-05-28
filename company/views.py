@@ -962,7 +962,7 @@ class TenancyDetailView(APIView):
 
     def put(self, request, pk, format=None):
         tenancy = get_object_or_404(Tenancy, pk=pk)
-        serializer = TenancyCreateSerializer(tenancy, data=request.data, partial=False)  # For full update
+        serializer = TenancyCreateSerializer(tenancy, data=request.data, partial=False)  
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
