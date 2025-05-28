@@ -461,14 +461,18 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def update(self, instance, validated_data):
         additional_charges_data = self.initial_data.get('additional_charges', None)
+
+        # 💡 Remove reverse relation fields to avoid TypeError
+        validated_data.pop('additional_charges', None)
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
+
         if additional_charges_data is not None:
-          
             PaymentSchedule.objects.filter(tenancy=instance).delete()
             AdditionalCharge.objects.filter(tenancy=instance).delete()
-      
+
             for charge_data in additional_charges_data:
                 try:
                     charge_type = Charges.objects.filter(id=charge_data['charge_type']).first()
@@ -481,13 +485,14 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                             due_date=charge_data.get('due_date'),
                             vat=charge_data.get('vat'),
                             total=charge_data.get('total'),
-                            
                         )
                 except Exception as e:
                     print(f"Error updating additional charge: {e}")
                     continue
+
             # Recreate payment schedules
             self._create_payment_schedules(instance)
+
         return instance
 
 
