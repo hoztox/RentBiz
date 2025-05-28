@@ -386,11 +386,11 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
         from decimal import Decimal
         from datetime import timedelta
         payment_schedules = []
-        # Use filter().first() instead of get() to avoid MultipleObjectsReturned
+
         rent_charge = Charges.objects.filter(name='Rent').first()
         deposit_charge = Charges.objects.filter(name='Deposit').first()
         commission_charge = Charges.objects.filter(name='Commission').first()
-        # Deposit schedule
+
         if tenancy.deposit and deposit_charge:
             vat_amount = Decimal('0.00')
             if deposit_charge.vat_percentage:
@@ -402,9 +402,10 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                 due_date=tenancy.start_date,
                 status='pending',
                 amount=tenancy.deposit,
-                vat=vat_amount
+                vat=vat_amount,
+                total=tenancy.total
             ))
-        # Commission schedule
+
         if tenancy.commision and commission_charge:
             vat_amount = Decimal('0.00')
             if commission_charge.vat_percentage:
@@ -416,41 +417,29 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                 due_date=tenancy.start_date,
                 status='pending',
                 amount=tenancy.commision,
-                vat=vat_amount
+                vat=vat_amount,
+                total=tenancy.total
             ))
-        # Rent schedules
+
         if tenancy.rent_per_frequency and tenancy.no_payments and rent_charge:
             rent_vat = Decimal('0.00')
             if rent_charge.vat_percentage:
                 rent_vat = (tenancy.rent_per_frequency * Decimal(str(rent_charge.vat_percentage))) / Decimal('100')
-            # Calculate proper payment frequency
+
             rental_months = tenancy.rental_months or 12
             payment_frequency_months = rental_months // tenancy.no_payments if tenancy.no_payments > 0 else 1
+
             for i in range(tenancy.no_payments):
-                # Calculate due date based on payment frequency (in months, not days)
                 due_date = tenancy.first_rent_due_on
                 if i > 0:
-                    # Add months instead of days for more accurate scheduling
                     year = due_date.year
                     month = due_date.month + (i * payment_frequency_months)
-                    # Handle month overflow
                     while month > 12:
                         year += 1
                         month -= 12
                     due_date = due_date.replace(year=year, month=month)
-                # Determine reason based on frequency
-                if payment_frequency_months == 1:
-                    reason = 'Monthly Rent'
-                elif payment_frequency_months == 2:
-                    reason = 'Bi-Monthly Rent'
-                elif payment_frequency_months == 3:
-                    reason = 'Quarterly Rent'
-                elif payment_frequency_months == 6:
-                    reason = 'Semi-Annual Rent'
-                elif payment_frequency_months == 12:
-                    reason = 'Annual Rent'
-                else:
-                    reason = f'{payment_frequency_months}-Monthly Rent'
+
+                reason = f'{payment_frequency_months}-Monthly Rent'
                 payment_schedules.append(PaymentSchedule(
                     tenancy=tenancy,
                     charge_type=rent_charge,
@@ -458,11 +447,13 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                     due_date=due_date,
                     status='pending',
                     amount=tenancy.rent_per_frequency,
-                    vat=rent_vat
+                    vat=rent_vat,
+                    total=tenancy.total
                 ))
-        # Only create schedules if we have valid data
+
         if payment_schedules:
             PaymentSchedule.objects.bulk_create(payment_schedules)
+
     @transaction.atomic
     def update(self, instance, validated_data):
         additional_charges_data = self.initial_data.get('additional_charges', None)
@@ -470,10 +461,10 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         instance.save()
         if additional_charges_data is not None:
-            # Clear existing payment schedules and additional charges
+          
             PaymentSchedule.objects.filter(tenancy=instance).delete()
             AdditionalCharge.objects.filter(tenancy=instance).delete()
-            # Create new additional charges
+      
             for charge_data in additional_charges_data:
                 try:
                     charge_type = Charges.objects.filter(id=charge_data['charge_type']).first()
