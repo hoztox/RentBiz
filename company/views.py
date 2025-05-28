@@ -1061,3 +1061,26 @@ class ConfirmTenancyView(APIView):
         unit.save()
 
         return Response({'detail': 'Tenancy confirmed and unit status set to occupied.'}, status=status.HTTP_200_OK)
+    
+    
+
+class OccupiedUnitsByBuildingView(APIView):
+    def get(self, request, building_id):
+        try:
+            building = Building.objects.get(id=building_id)
+        except Building.DoesNotExist:
+            return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        vacant_units = Units.objects.filter(building=building, unit_status='occupied')
+        serializer = UnitSerializer(vacant_units, many=True)
+        return Response(serializer.data)
+
+
+class BuildingsWithOccupiedUnitsView(APIView):
+    def get(self, request, company_id):
+        buildings = Building.objects.filter(
+            company_id=company_id,
+            unit_building__unit_status='occupied'
+        ).distinct()
+        serializer = BuildingSerializer(buildings, many=True)
+        return Response(serializer.data)
