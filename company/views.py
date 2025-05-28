@@ -1033,7 +1033,10 @@ class VacantUnitsByBuildingView(APIView):
 
 
 class BuildingsWithVacantUnitsView(APIView):
-    def get(self, request):
-        buildings = Building.objects.filter(unit_building__unit_status='vacant').distinct()
+    def get(self, request, company_id):
+        buildings = Building.objects.filter(
+            company_id=company_id,
+            unit_building__unit_status='vacant'
+        ).distinct()
         serializer = BuildingSerializer(buildings, many=True)
         return Response(serializer.data)

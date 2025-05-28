@@ -18,7 +18,7 @@ urlpatterns = [
     path('buildings/create/', BuildingCreateView.as_view(), name='building-create'),
     path('buildings/<int:pk>/', BuildingDetailView.as_view(), name='building-detail'),
     path('buildings/company/<int:company_id>/', BuildingByCompanyView.as_view(), name='building-by-company'),
-    path('buildings/vacant/', BuildingsWithVacantUnitsView.as_view(), name='buildings-with-vacant-units'),
+    path('buildings/vacant/<int:company_id>/', BuildingsWithVacantUnitsView.as_view(), name='buildings-with-vacant-units'),
     
     # unit Properties
     path('units/create/', UnitCreateView.as_view(), name='unit-create'),
