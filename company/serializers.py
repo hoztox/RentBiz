@@ -395,6 +395,7 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
             vat_amount = Decimal('0.00')
             if deposit_charge.vat_percentage:
                 vat_amount = (tenancy.deposit * Decimal(str(deposit_charge.vat_percentage))) / Decimal('100')
+            total = tenancy.deposit + vat_amount
             payment_schedules.append(PaymentSchedule(
                 tenancy=tenancy,
                 charge_type=deposit_charge,
@@ -403,13 +404,14 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                 status='pending',
                 amount=tenancy.deposit,
                 vat=vat_amount,
-                total=tenancy.total
+                total=total
             ))
 
         if tenancy.commision and commission_charge:
             vat_amount = Decimal('0.00')
             if commission_charge.vat_percentage:
                 vat_amount = (tenancy.commision * Decimal(str(commission_charge.vat_percentage))) / Decimal('100')
+            total = tenancy.commision + vat_amount
             payment_schedules.append(PaymentSchedule(
                 tenancy=tenancy,
                 charge_type=commission_charge,
@@ -418,7 +420,8 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                 status='pending',
                 amount=tenancy.commision,
                 vat=vat_amount,
-                total=tenancy.total
+                total = total
+
             ))
 
         if tenancy.rent_per_frequency and tenancy.no_payments and rent_charge:

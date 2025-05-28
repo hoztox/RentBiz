@@ -409,7 +409,5 @@ class AdditionalCharge(models.Model):
     total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
 
    
-
-
     def __str__(self):
         return f"{self.tenancy} - {self.charge_type} - Due: {self.due_date}"
