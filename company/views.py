@@ -1056,7 +1056,8 @@ class ConfirmTenancyView(APIView):
         tenancy.status = 'active'
         tenancy.save()
 
-        unit.status = 'occupied'
+        unit.unit_status = 'occupied'
+
         unit.save()
 
         return Response({'detail': 'Tenancy confirmed and unit status set to occupied.'}, status=status.HTTP_200_OK)
