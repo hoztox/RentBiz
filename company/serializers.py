@@ -443,6 +443,7 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                     due_date = due_date.replace(year=year, month=month)
 
                 reason = f'{payment_frequency_months}-Monthly Rent'
+                total = tenancy.rent_per_frequency + rent_vat
                 payment_schedules.append(PaymentSchedule(
                     tenancy=tenancy,
                     charge_type=rent_charge,
@@ -451,7 +452,7 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                     status='pending',
                     amount=tenancy.rent_per_frequency,
                     vat=rent_vat,
-                    total=tenancy.total
+                    total=total
                 ))
 
         if payment_schedules:
