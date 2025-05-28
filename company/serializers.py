@@ -269,20 +269,22 @@ class TenantSerializer(serializers.ModelSerializer):
         building = Tenant.objects.create(**validated_data)
         for doc_data in documents_data:
             TenantDocumentType.objects.create(tenant=building, **doc_data)
-        return building
+            return building
     def update(self, instance, validated_data):
-        documents_data = validated_data.pop('tenant_comp', [])
+        documents_data = validated_data.pop('tenant_comp', None)
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
-
-        instance.tenant_comp.all().delete()
-        for doc_data in documents_data:
-            TenantDocumentType.objects.create(tenant=instance, **doc_data)
+     
+        if documents_data is not None:
+            instance.tenant_comp.all().delete()
+            for doc_data in documents_data:
+                TenantDocumentType.objects.create(tenant=instance, **doc_data)
 
         return instance
+
 
 
 class ChargeCodeSerializer(serializers.ModelSerializer):
