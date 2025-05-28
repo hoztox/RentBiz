@@ -372,10 +372,11 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
             AdditionalCharge.objects.create(
                 tenancy=tenancy,
                 charge_type=charge_type,
-                amount=charge_data['amount'],
-                reason=charge_data['reason'],
-                due_date=charge_data['due_date']
+                amount=charge_data.get('amount'),
+                reason=charge_data.get('reason'),
+                due_date=charge_data.get('due_date')   
             )
+
         return tenancy
 
     def _create_payment_schedules(self, tenancy):
@@ -459,13 +460,15 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
             AdditionalCharge.objects.filter(tenancy=instance).delete()
             for charge_data in additional_charges_data:
                 charge_type = Charges.objects.get(id=charge_data['charge_type'])
-                AdditionalCharge.objects.create(
-                    tenancy=instance,
-                    charge_type=charge_type,
-                    amount=charge_data['amount'],
-                    reason=charge_data['reason'],
-                    due_date=charge_data['due_date']
-                )
+                if 'charge_type' in charge_data and 'amount' in charge_data:
+                    AdditionalCharge.objects.create(
+                        tenancy=instance,
+                        charge_type=Charges.objects.get(id=charge_data['charge_type']),
+                        amount=charge_data.get('amount'),
+                        reason=charge_data.get('reason'),
+                        due_date=charge_data.get('due_date')
+                    )
+
 
       
             self._create_payment_schedules(instance, additional_charges_data)
