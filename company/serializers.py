@@ -328,7 +328,7 @@ class PaymentScheduleSerializer(serializers.ModelSerializer):
 
 
 class AdditionalChargeSerializer(serializers.ModelSerializer):
-    charge_type_name = serializers.CharField(source='charge_type.name', read_only=True)
+    charge_type = serializers.CharField(source='charge_type.name', read_only=True)
 
     class Meta:
         model = AdditionalCharge
@@ -491,12 +491,31 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
         return instance
 
 
+
+
+class PaymentScheduleGetSerializer(serializers.ModelSerializer):
+    charge_type = ChargesSerializer()
+
+    class Meta:
+        model = PaymentSchedule
+        fields = '__all__'
+        
+
+class AdditionalChargeGetSerializer(serializers.ModelSerializer):
+    charge_type = ChargesSerializer()
+
+
+    class Meta:
+        model = AdditionalCharge
+        fields = '__all__'
+         
+
 class TenancyDetailSerializer(serializers.ModelSerializer):
     tenant_name = serializers.CharField(source='tenant.name', read_only=True)
     building_name = serializers.CharField(source='building.name', read_only=True)
     unit_name = serializers.CharField(source='unit.name', read_only=True)
-    payment_schedules = PaymentScheduleSerializer(many=True, read_only=True)
-    additional_charges = AdditionalChargeSerializer(many=True, read_only=True)
+    payment_schedules = PaymentScheduleGetSerializer(many=True, read_only=True)
+    additional_charges = AdditionalChargeGetSerializer(many=True, read_only=True)
     class Meta:
         model = Tenancy
         fields = '__all__'
@@ -508,12 +527,14 @@ class TenancyListSerializer(serializers.ModelSerializer):
     company_name = serializers.CharField(source='company.name', read_only=True)
     building = BuildingSerializer()
     unit = UnitGetSerializer()
-    payment_schedules = PaymentScheduleSerializer(many=True, read_only=True) 
-    additional_charges = AdditionalChargeSerializer(many=True, read_only=True)
+    payment_schedules = PaymentScheduleGetSerializer(many=True, read_only=True) 
+    additional_charges = AdditionalChargeGetSerializer(many=True, read_only=True)
 
     class Meta:
         model = Tenancy
         fields = '__all__'
+
+
 
 
 
