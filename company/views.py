@@ -1020,22 +1020,20 @@ class CloseTenanciesByCompanyAPIView(APIView):
 
 
  
+class VacantUnitsByBuildingView(APIView):
+    def get(self, request, building_id):
+        try:
+            building = Building.objects.get(id=building_id)
+        except Building.DoesNotExist:
+            return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        vacant_units = Units.objects.filter(building=building, unit_status='vacant')
+        serializer = UnitSerializer(vacant_units, many=True)
+        return Response(serializer.data)
 
-class UnitsByCompanyAPIView(APIView):
-    def get(self, request, company_id):
- 
-        units = Units.objects.filter(company_id=company_id)
- 
-        building_data = []
-        buildings = units.values_list('building', flat=True).distinct()
-        for building_id in buildings:
-            building_units = units.filter(building_id=building_id)
-            building_name = Building.objects.get(id=building_id).building_name if building_id else "No Building Assigned"
-            serialized_units = UnitSerializer(building_units, many=True).data
-            building_data.append({
-                "building_id": building_id,
-                "building_name": building_name,
-                "units": serialized_units
-            })
 
-        return Response(building_data, status=status.HTTP_200_OK)
+class BuildingsWithVacantUnitsView(APIView):
+    def get(self, request):
+        buildings = Building.objects.filter(unit_building__unit_status='vacant').distinct()
+        serializer = BuildingSerializer(buildings, many=True)
+        return Response(serializer.data)

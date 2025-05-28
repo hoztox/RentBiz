@@ -18,13 +18,14 @@ urlpatterns = [
     path('buildings/create/', BuildingCreateView.as_view(), name='building-create'),
     path('buildings/<int:pk>/', BuildingDetailView.as_view(), name='building-detail'),
     path('buildings/company/<int:company_id>/', BuildingByCompanyView.as_view(), name='building-by-company'),
+    path('buildings/vacant/', BuildingsWithVacantUnitsView.as_view(), name='buildings-with-vacant-units'),
     
     # unit Properties
     path('units/create/', UnitCreateView.as_view(), name='unit-create'),
     path('units/<int:pk>/', UnitDetailView.as_view(), name='unit-detail'),
     path('units/<int:pk>/edit/', UnitEditView.as_view(), name='unit-edit'),
     path('units/company/<int:company_id>/', UnitsByCompanyView.as_view(), name='units-by-company'),
-    path('units/by-building/<int:company_id>/', UnitsByCompanyAPIView.as_view(), name='units-by-company'),
+    path('units/<int:building_id>/vacant-units/', VacantUnitsByBuildingView.as_view(), name='vacant-units-by-building'),
     
     # unit type in masters
     path('unit-types/create/', UnitTypeListCreateAPIView.as_view(), name='unit-type-list-create'),
