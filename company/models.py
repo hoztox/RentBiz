@@ -387,10 +387,7 @@ class PaymentSchedule(models.Model):
     vat = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
 
-    def save(self, *args, **kwargs):
-        if self.amount is not None and self.vat is not None:
-            self.total = self.amount + self.vat
-        super().save(*args, **kwargs)
+    
 
     def __str__(self):
         return f"{self.tenancy} - {self.charge_type} - Due: {self.due_date}"
@@ -411,9 +408,8 @@ class AdditionalCharge(models.Model):
     vat = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
 
-    def save(self, *args, **kwargs):
-        if self.amount is not None and self.vat is not None:
-            self.total = self.amount + self.vat
-        super().save(*args, **kwargs)
+    
 
 
+    def __str__(self):
+        return f"{self.tenancy} - {self.charge_type} - Due: {self.due_date}"

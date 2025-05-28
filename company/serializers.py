@@ -370,7 +370,8 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                         charge_type=charge_type,
                         amount=charge_data.get('amount'),
                         reason=charge_data.get('reason'),
-                        due_date=charge_data.get('due_date')
+                        due_date=charge_data.get('due_date'),
+                      
                     )
                 else:
                  
