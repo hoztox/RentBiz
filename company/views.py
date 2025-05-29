@@ -493,6 +493,7 @@ class UnitEditView(APIView):
 
         unit_data = {}
         for key, value in request.data.items():
+   
             if key != 'unit_comp_json' and not key.startswith('document_file_'):
                 unit_data[key] = value
 
@@ -506,17 +507,14 @@ class UnitEditView(APIView):
                     file_index = doc_data.pop('file_index', None)
                     document_id = doc_data.get('id')
 
-                    if file_index is not None:
-                        file_key = f'document_file_{file_index}'
-                        if file_key in request.FILES:
-                            doc_data['upload_file'] = request.FILES[file_key]
-                        elif document_id:
-                  
-                            try:
-                                existing_doc = UnitDocumentType.objects.get(id=document_id)
-                                doc_data['upload_file'] = existing_doc.upload_file
-                            except UnitDocumentType.DoesNotExist:
-                                pass  
+                    file_key = f'document_file_{file_index}' if file_index is not None else None
+
+                    if file_key and file_key in request.FILES:
+              
+                        doc_data['upload_file'] = request.FILES[file_key]
+                    else:
+             
+                        doc_data.pop('upload_file', None)
 
                     updated_docs.append(doc_data)
 
@@ -535,6 +533,7 @@ class UnitEditView(APIView):
         else:
             print("Serializer errors:", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
  
     
@@ -902,10 +901,10 @@ class TenancyCreateView(APIView):
         serializer = TenancyCreateSerializer(data=request.data)
         
         if serializer.is_valid():
-            # Create tenancy with payment schedules
+       
             tenancy = serializer.save()
             
-            # Return detailed response with payment schedules
+
             detail_serializer = TenancyDetailSerializer(tenancy)
             
             return Response({
@@ -1065,5 +1064,4 @@ class BuildingsWithOccupiedUnitsView(APIView):
         ).distinct()
         serializer = BuildingSerializer(buildings, many=True)
         return Response(serializer.data)
-    
     

@@ -187,16 +187,14 @@ class UnitSerializer(serializers.ModelSerializer):
         for doc_data in documents_data:
             UnitDocumentType.objects.create(unit=unit, **doc_data)
         return unit
-    
+        
     def update(self, instance, validated_data):
- 
         documents_data = validated_data.pop('unit_comp', None)
- 
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
-     
         if documents_data is not None:
             existing_docs = {doc.id: doc for doc in instance.unit_comp.all()}
             updated_ids = []
@@ -204,16 +202,25 @@ class UnitSerializer(serializers.ModelSerializer):
             for doc_data in documents_data:
                 doc_id = doc_data.get('id', None)
                 if doc_id and doc_id in existing_docs:
-            
                     doc_instance = existing_docs[doc_id]
+
+                
                     for attr, value in doc_data.items():
-                        setattr(doc_instance, attr, value)
+              
+                        if attr == 'upload_file':
+                     
+                            if hasattr(value, 'read'):
+                                setattr(doc_instance, attr, value)
+                        else:
+                            setattr(doc_instance, attr, value)
+
                     doc_instance.save()
                     updated_ids.append(doc_id)
                 else:
-       
+                    # Creating new document - expect file to be present here
                     UnitDocumentType.objects.create(unit=instance, **doc_data)
- 
+
+            # Delete docs not present in update
             for doc_id in existing_docs:
                 if doc_id not in updated_ids:
                     existing_docs[doc_id].delete()
@@ -488,29 +495,28 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
         original_status = instance.status
         new_status = validated_data.get('status', instance.status)
 
-        # Store the original unit before updating
+       
         previous_unit = instance.unit
 
-        # Update fields on tenancy
+    
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
         updated_unit = instance.unit
 
-        # Only change unit status if new status is "active"
+      
         if new_status == "active":
-            # Mark previous unit as "vacant" if it's different
+        
             if previous_unit and previous_unit != updated_unit:
                 previous_unit.unit_status = "vacant"
                 previous_unit.save()
-
-            # Mark new unit as "occupied"
+ 
             if updated_unit:
                 updated_unit.unit_status = "occupied"
                 updated_unit.save()
 
-        # Handle additional charges and recreate payment schedule
+   
         if additional_charges_data is not None:
             PaymentSchedule.objects.filter(tenancy=instance).delete()
             AdditionalCharge.objects.filter(tenancy=instance).delete()

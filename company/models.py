@@ -4,6 +4,8 @@ from accounts.models import *
 from decimal import Decimal
 
 
+
+    
 class Users(models.Model):   
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='user_comp', null=True, blank=True) 
     name = models.CharField(max_length=100,null=True, blank=True)
@@ -163,8 +165,6 @@ class UnitDocumentType(models.Model):
     def __str__(self):
       return self.unit.unit_name if self.unit and self.unit.unit_name else "Untitled Unit"
 
-
-    
 
 
 class IDType(models.Model):
