@@ -754,6 +754,8 @@ class TenantCreateView(APIView):
 
     
 class TenantDetailView(APIView):
+    
+
     def get_object(self, pk):
         try:
             return Tenant.objects.get(pk=pk)
@@ -761,17 +763,40 @@ class TenantDetailView(APIView):
             return None
 
     def get(self, request, pk):
-        building = self.get_object(pk)
-        if not building:
-            return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
-        serializer = TenantGetSerializer(building)
+        tenant = self.get_object(pk)
+        if not tenant:
+            return Response({'error': 'Tenant not found'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = TenantGetSerializer(tenant)
         return Response(serializer.data)
 
     def put(self, request, pk):
-        building = self.get_object(pk)
-        if not building:
-            return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
-        serializer = TenantSerializer(building, data=request.data)
+        tenant = self.get_object(pk)
+        if not tenant:
+            return Response({'error': 'Tenant not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        tenant_data = {}
+        for key, value in request.data.items():
+            if key != 'tenant_comp_json' and not key.startswith('document_file_'):
+                tenant_data[key] = value
+
+        tenant_comp_json = request.data.get('tenant_comp_json')
+        if tenant_comp_json:
+            try:
+                tenant_comp_data = json.loads(tenant_comp_json)
+
+                for doc_data in tenant_comp_data:
+                    file_index = doc_data.pop('file_index', None)
+                    if file_index is not None:
+                        file_key = f'document_file_{file_index}'
+                        if file_key in request.FILES:
+                            doc_data['upload_file'] = request.FILES[file_key]
+              
+                tenant_data['tenant_comp'] = tenant_comp_data
+
+            except json.JSONDecodeError:
+                return Response({'error': 'Invalid JSON in tenant_comp_json'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = TenantSerializer(tenant, data=tenant_data, partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)

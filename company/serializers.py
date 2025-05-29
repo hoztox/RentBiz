@@ -273,17 +273,37 @@ class TenantSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         documents_data = validated_data.pop('tenant_comp', None)
 
+        # Update tenant fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
-     
         if documents_data is not None:
-            instance.tenant_comp.all().delete()
+            existing_docs = {doc.id: doc for doc in instance.tenant_comp.all()}
+            new_doc_ids = []
+
             for doc_data in documents_data:
-                TenantDocumentType.objects.create(tenant=instance, **doc_data)
+                doc_id = doc_data.get('id')
+                if doc_id and doc_id in existing_docs:
+                    # Update existing document
+                    doc_instance = existing_docs[doc_id]
+                    for attr, value in doc_data.items():
+                        if attr != 'id':
+                            setattr(doc_instance, attr, value)
+                    doc_instance.save()
+                    new_doc_ids.append(doc_id)
+                else:
+                    # Create new document
+                    new_doc = TenantDocumentType.objects.create(tenant=instance, **doc_data)
+                    new_doc_ids.append(new_doc.id)
+
+            # Delete documents that are not in the updated list
+            for doc_id, doc_instance in existing_docs.items():
+                if doc_id not in new_doc_ids:
+                    doc_instance.delete()
 
         return instance
+
 
 
 
