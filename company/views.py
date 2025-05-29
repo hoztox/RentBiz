@@ -419,7 +419,7 @@ class UnitCreateView(APIView):
     def post(self, request):
         print("Raw request data:", request.data)
         
-        # Extract basic unit data
+   
         unit_data = {}
         for key, value in request.data.items():
             if key not in ['unit_comp_json'] and not key.startswith('document_file_'):
@@ -484,51 +484,49 @@ class UnitsByCompanyView(APIView):
  
 class UnitEditView(APIView):
     def put(self, request, pk):
-        """
-        Update an existing unit with JSON import functionality
-        """
         print("Raw request data:", request.data)
-        
-        # Get the unit instance to update
+
         try:
             unit = Units.objects.get(pk=pk)
         except Units.DoesNotExist:
-            return Response(
-                {'error': 'Unit not found'}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Extract basic unit data
+            return Response({'error': 'Unit not found'}, status=status.HTTP_404_NOT_FOUND)
+
         unit_data = {}
         for key, value in request.data.items():
-            if key not in ['unit_comp_json'] and not key.startswith('document_file_'):
+            if key != 'unit_comp_json' and not key.startswith('document_file_'):
                 unit_data[key] = value
-        
-        # Process unit_comp_json if provided
+
         unit_comp_json = request.data.get('unit_comp_json')
         if unit_comp_json:
             try:
                 unit_comp_data = json.loads(unit_comp_json)
-                
-                # Process file uploads for documents
+                updated_docs = []
+
                 for doc_data in unit_comp_data:
                     file_index = doc_data.pop('file_index', None)
+                    document_id = doc_data.get('id')
+
                     if file_index is not None:
                         file_key = f'document_file_{file_index}'
                         if file_key in request.FILES:
                             doc_data['upload_file'] = request.FILES[file_key]
-                
-                unit_data['unit_comp'] = unit_comp_data
-                
+                        elif document_id:
+                  
+                            try:
+                                existing_doc = UnitDocumentType.objects.get(id=document_id)
+                                doc_data['upload_file'] = existing_doc.upload_file
+                            except UnitDocumentType.DoesNotExist:
+                                pass  
+
+                    updated_docs.append(doc_data)
+
+                unit_data['unit_comp'] = updated_docs
+
             except json.JSONDecodeError:
-                return Response(
-                    {'error': 'Invalid JSON in unit_comp_json'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        
+                return Response({'error': 'Invalid JSON in unit_comp_json'}, status=status.HTTP_400_BAD_REQUEST)
+
         print("Processed unit data:", unit_data)
-        
-        # Use serializer to update the unit
+
         serializer = UnitSerializer(unit, data=unit_data, partial=True)
         if serializer.is_valid():
             serializer.save()
@@ -537,61 +535,8 @@ class UnitEditView(APIView):
         else:
             print("Serializer errors:", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    def patch(self, request, pk):
-        """
-        Partially update an existing unit with JSON import functionality
-        """
-        print("Raw request data:", request.data)
-        
-        # Get the unit instance to update
-        try:
-            unit = Units.objects.get(pk=pk)
-        except Units.DoesNotExist:
-            return Response(
-                {'error': 'Unit not found'}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Extract basic unit data
-        unit_data = {}
-        for key, value in request.data.items():
-            if key not in ['unit_comp_json'] and not key.startswith('document_file_'):
-                unit_data[key] = value
-        
-        # Process unit_comp_json if provided
-        unit_comp_json = request.data.get('unit_comp_json')
-        if unit_comp_json:
-            try:
-                unit_comp_data = json.loads(unit_comp_json)
-                
-                # Process file uploads for documents
-                for doc_data in unit_comp_data:
-                    file_index = doc_data.pop('file_index', None)
-                    if file_index is not None:
-                        file_key = f'document_file_{file_index}'
-                        if file_key in request.FILES:
-                            doc_data['upload_file'] = request.FILES[file_key]
-                
-                unit_data['unit_comp'] = unit_comp_data
-                
-            except json.JSONDecodeError:
-                return Response(
-                    {'error': 'Invalid JSON in unit_comp_json'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        
-        print("Processed unit data:", unit_data)
-        
-        # Use serializer to partially update the unit
-        serializer = UnitSerializer(unit, data=unit_data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            print("Successfully updated unit:", serializer.data)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        else:
-            print("Serializer errors:", serializer.errors)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+ 
     
     def get(self, request, pk):
         """
