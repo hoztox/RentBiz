@@ -463,23 +463,34 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def update(self, instance, validated_data):
         additional_charges_data = self.initial_data.get('additional_charges', None)
-        
         validated_data.pop('additional_charges', None)
 
-       
         original_status = instance.status
         new_status = validated_data.get('status', instance.status)
 
- 
+        # Store the original unit before updating
+        previous_unit = instance.unit
+
+        # Update fields on tenancy
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
-    
-        if new_status == 'active' and instance.unit:
-            instance.unit.unit_status = 'occupied'
-            instance.unit.save()
+        updated_unit = instance.unit
 
+        # Only change unit status if new status is "active"
+        if new_status == "active":
+            # Mark previous unit as "vacant" if it's different
+            if previous_unit and previous_unit != updated_unit:
+                previous_unit.unit_status = "vacant"
+                previous_unit.save()
+
+            # Mark new unit as "occupied"
+            if updated_unit:
+                updated_unit.unit_status = "occupied"
+                updated_unit.save()
+
+        # Handle additional charges and recreate payment schedule
         if additional_charges_data is not None:
             PaymentSchedule.objects.filter(tenancy=instance).delete()
             AdditionalCharge.objects.filter(tenancy=instance).delete()
@@ -501,7 +512,6 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                     print(f"Error updating additional charge: {e}")
                     continue
 
-        
             self._create_payment_schedules(instance)
 
         return instance
