@@ -481,58 +481,67 @@ class UnitsByCompanyView(APIView):
         return Response(serializer.data)
     
     
- 
+import json
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from .models import Units, UnitDocumentType
+from .serializers import UnitSerializer
+
 class UnitEditView(APIView):
     def put(self, request, pk):
         print("Raw request data:", request.data)
+        print("Files keys received:", request.FILES.keys())
 
         try:
             unit = Units.objects.get(pk=pk)
         except Units.DoesNotExist:
             return Response({'error': 'Unit not found'}, status=status.HTTP_404_NOT_FOUND)
 
+        # Handle file upload separately if present
+        if 'upload_file' in request.FILES:
+            uploaded_file = request.FILES['upload_file']
+            print(f"Processing file: {uploaded_file.name}")
+            
+            # Find existing document or create new one
+            existing_doc = unit.unit_comp.first()  # Get first document
+            
+            if existing_doc:
+                # Update existing document
+                existing_doc.upload_file = uploaded_file
+                existing_doc.save()
+                print(f"Updated existing document {existing_doc.id} with file: {existing_doc.upload_file}")
+            else:
+                # Create new document
+                new_doc = UnitDocumentType.objects.create(
+                    unit=unit,
+                    upload_file=uploaded_file,
+                    number='AUTO-' + str(unit.id),
+                    doc_type_id=1  # Set appropriate default
+                )
+                print(f"Created new document {new_doc.id} with file: {new_doc.upload_file}")
+
+        # Process other unit data (excluding files)
         unit_data = {}
         for key, value in request.data.items():
-   
-            if key != 'unit_comp_json' and not key.startswith('document_file_'):
+            if key not in ['upload_file', 'unit_comp_json'] and not key.startswith('document_file_'):
                 unit_data[key] = value
 
-        unit_comp_json = request.data.get('unit_comp_json')
-        if unit_comp_json:
-            try:
-                unit_comp_data = json.loads(unit_comp_json)
-                updated_docs = []
+        # Update unit if there's other data to update
+        if unit_data:
+            serializer = UnitSerializer(unit, data=unit_data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                print("Unit data updated successfully")
+            else:
+                print("Serializer errors:", serializer.errors)
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-                for doc_data in unit_comp_data:
-                    file_index = doc_data.pop('file_index', None)
-                    document_id = doc_data.get('id')
-
-                    file_key = f'document_file_{file_index}' if file_index is not None else None
-
-                    if file_key and file_key in request.FILES:
-              
-                        doc_data['upload_file'] = request.FILES[file_key]
-                    else:
-             
-                        doc_data.pop('upload_file', None)
-
-                    updated_docs.append(doc_data)
-
-                unit_data['unit_comp'] = updated_docs
-
-            except json.JSONDecodeError:
-                return Response({'error': 'Invalid JSON in unit_comp_json'}, status=status.HTTP_400_BAD_REQUEST)
-
-        print("Processed unit data:", unit_data)
-
-        serializer = UnitSerializer(unit, data=unit_data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            print("Successfully updated unit:", serializer.data)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        else:
-            print("Serializer errors:", serializer.errors)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # Return updated unit data
+        response_serializer = UnitSerializer(unit)
+        print("Final response:", response_serializer.data)
+        
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
 
 
  

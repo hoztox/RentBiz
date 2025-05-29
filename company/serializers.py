@@ -189,42 +189,56 @@ class UnitSerializer(serializers.ModelSerializer):
         return unit
         
     def update(self, instance, validated_data):
+        print(f"Serializer update called with validated_data: {validated_data}")
+        
         documents_data = validated_data.pop('unit_comp', None)
+        print(f"Documents data extracted: {documents_data}")
 
+        # Update main unit fields
         for attr, value in validated_data.items():
+            print(f"Setting {attr} = {value}")
             setattr(instance, attr, value)
         instance.save()
+        print("Main unit instance saved")
 
         if documents_data is not None:
             existing_docs = {doc.id: doc for doc in instance.unit_comp.all()}
+            print(f"Existing documents: {list(existing_docs.keys())}")
             updated_ids = []
 
             for doc_data in documents_data:
-                doc_id = doc_data.get('id', None)
+                print(f"Processing document data: {doc_data}")
+                doc_id = doc_data.get('id')
+                
                 if doc_id and doc_id in existing_docs:
                     doc_instance = existing_docs[doc_id]
-
-                
+                    print(f"Updating existing document {doc_id}")
+                    
                     for attr, value in doc_data.items():
-              
                         if attr == 'upload_file':
-                     
-                            if hasattr(value, 'read'):
+                            if value and hasattr(value, 'read'):
+                                print(f"Setting file {value.name} on document {doc_id}")
                                 setattr(doc_instance, attr, value)
+                            else:
+                                print(f"No valid file found for document {doc_id}, value: {value}")
                         else:
                             setattr(doc_instance, attr, value)
-
+                    
                     doc_instance.save()
+                    print(f"Document {doc_id} saved with file: {doc_instance.upload_file}")
                     updated_ids.append(doc_id)
                 else:
-                    # Creating new document - expect file to be present here
-                    UnitDocumentType.objects.create(unit=instance, **doc_data)
+                    print(f"Creating new document with data: {doc_data}")
+                    new_doc = UnitDocumentType.objects.create(unit=instance, **doc_data)
+                    print(f"New document created with ID: {new_doc.id}, file: {new_doc.upload_file}")
 
-            # Delete docs not present in update
+            # Delete documents not in the update
             for doc_id in existing_docs:
                 if doc_id not in updated_ids:
+                    print(f"Deleting document {doc_id}")
                     existing_docs[doc_id].delete()
 
+        print("Serializer update completed")
         return instance
 
     
