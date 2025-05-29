@@ -404,8 +404,13 @@ class BuildingByCompanyView(APIView):
     def get(self, request, company_id):
         buildings = Building.objects.filter(company__id=company_id)
         serializer = BuildingSerializer(buildings, many=True)
-        return Response(serializer.data)
+        data = serializer.data
 
+  
+        for i, building in enumerate(buildings):
+            data[i]['unit_count'] = building.unit_building.count()
+
+        return Response(data)
 
 
 import json
