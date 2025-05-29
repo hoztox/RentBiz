@@ -268,8 +268,14 @@ class BuildingDetailView(APIView):
         building = self.get_object(pk)
         if not building:
             return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
+        
         serializer = BuildingSerializer(building)
-        return Response(serializer.data)
+        unit_count = building.unit_building.count()  
+
+        data = serializer.data
+        data['unit_count'] = unit_count   
+
+        return Response(data)
 
     def put(self, request, pk):
         building = self.get_object(pk)
@@ -1086,11 +1092,3 @@ class BuildingsWithOccupiedUnitsView(APIView):
         return Response(serializer.data)
     
     
-class UnitCountView(APIView):
-    def get(self, request, building_id):
-        try:
-            building = Building.objects.get(id=building_id)
-            unit_count = building.unit_building.count()
-            return Response({'building_id': building_id, 'unit_count': unit_count})
-        except Building.DoesNotExist:
-            return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)

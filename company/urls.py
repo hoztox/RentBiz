@@ -20,7 +20,7 @@ urlpatterns = [
     path('buildings/company/<int:company_id>/', BuildingByCompanyView.as_view(), name='building-by-company'),
     path('buildings/vacant/<int:company_id>/', BuildingsWithVacantUnitsView.as_view(), name='buildings-with-vacant-units'),
     path('buildings/occupied/<int:company_id>/', BuildingsWithOccupiedUnitsView.as_view(), name='buildings-with-vacant-units'),
-    path('buildings/<int:building_id>/unit-count/', UnitCountView.as_view(), name='vacant-units-by-building'),
+    
     
     # unit Properties
     path('units/create/', UnitCreateView.as_view(), name='unit-create'),
