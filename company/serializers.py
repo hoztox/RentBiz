@@ -426,8 +426,7 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                 continue
         return tenancy
     def _create_payment_schedules(self, tenancy):
-        from decimal import Decimal
-        from datetime import timedelta
+ 
         payment_schedules = []
 
         rent_charge = Charges.objects.filter(name='Rent').first()
@@ -685,8 +684,7 @@ class TenancyRenewalSerializer(serializers.ModelSerializer):
 
     def _create_payment_schedules(self, tenancy):
         """Create payment schedules for the renewed tenancy"""
-        from decimal import Decimal
-        from datetime import timedelta
+
         payment_schedules = []
 
         rent_charge = Charges.objects.filter(name='Rent').first()

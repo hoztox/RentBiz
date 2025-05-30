@@ -1,5 +1,6 @@
 from django.shortcuts import render
 from .serializers import *
+from .models import *
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -14,18 +15,13 @@ from datetime import datetime, timedelta
 import jwt
 import re
 from rest_framework import generics
-
+from collections import defaultdict
 from rest_framework import status
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
-
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework_simplejwt.tokens import RefreshToken
-from django.contrib.auth.hashers import check_password
-from .models import Company, Users
+import json
+ 
 
 class CompanyLoginView(APIView):
     def post(self, request, *args, **kwargs):
@@ -35,7 +31,7 @@ class CompanyLoginView(APIView):
         if not username or not password:
             return Response({'error': 'Username and password must be provided'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 1. Try to log in as User
+ 
         try:
             user = Users.objects.get(username=username)
             if user.status == 'blocked':
@@ -187,7 +183,7 @@ class UserDetailAPIView(APIView):
         user.delete()
         return Response({"message": "User deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
 
-from collections import defaultdict
+
 class BuildingCreateView(APIView):
     def post(self, request, *args, **kwargs):
         print("Request data:", request.data)
@@ -285,7 +281,7 @@ class BuildingDetailView(APIView):
         
         print("Request data:", request.data)
         
-        # Helper function to handle empty values
+     
         def get_value_or_none(key, convert_type=None):
             value = request.data.get(key, '')
             if value == '' or value is None:
@@ -297,7 +293,7 @@ class BuildingDetailView(APIView):
                     return None
             return value
         
-        # Process building data
+      
         building_data = {
             'company': request.data.get('company'),
             'building_name': request.data.get('building_name'),
@@ -312,19 +308,19 @@ class BuildingDetailView(APIView):
             'building_address': request.data.get('building_address'),
         }
         
-        # Process document data - handle both JSON array and form-data formats
+     
         documents_data = []
-        documents_provided = False  # Flag to check if documents were explicitly provided
+        documents_provided = False   
         
-        # Check if build_comp is explicitly provided in the request
+        
         if 'build_comp' in request.data:
             documents_provided = True
             
-            # Check if build_comp is already a list (JSON format)
+   
             if isinstance(request.data['build_comp'], list):
                 documents_data = request.data['build_comp']
             else:
-                # Handle form-data format
+ 
                 document_groups = defaultdict(dict)
                 
                 for key, value in request.data.items():
@@ -337,20 +333,20 @@ class BuildingDetailView(APIView):
                 
                 for index in sorted(document_groups.keys()):
                     doc_data = document_groups[index]
-                    # Add document if it has any meaningful data (not just upload_file)
+                  
                     if any(key in doc_data for key in ['doc_type', 'number', 'issued_date', 'expiry_date', 'upload_file']):
-                        # Convert id to integer if present
+              
                         if 'id' in doc_data and doc_data['id']:
                             try:
                                 doc_data['id'] = int(doc_data['id'])
                             except (ValueError, TypeError):
-                                doc_data.pop('id')  # Remove invalid ID
+                                doc_data.pop('id')  
                         documents_data.append(doc_data)
         
-        # Check if any build_comp fields are present in form data
+  
         elif any(key.startswith('build_comp[') for key in request.data.keys()):
             documents_provided = True
-            # Handle form-data format when build_comp key itself is not present
+        
             document_groups = defaultdict(dict)
             
             for key, value in request.data.items():
@@ -363,20 +359,20 @@ class BuildingDetailView(APIView):
             
             for index in sorted(document_groups.keys()):
                 doc_data = document_groups[index]
-                # Add document if it has any meaningful data (not just upload_file)
+               
                 if any(key in doc_data for key in ['doc_type', 'number', 'issued_date', 'expiry_date', 'upload_file']):
-                    # Convert id to integer if present
+          
                     if 'id' in doc_data and doc_data['id']:
                         try:
                             doc_data['id'] = int(doc_data['id'])
                         except (ValueError, TypeError):
-                            doc_data.pop('id')  # Remove invalid ID
+                            doc_data.pop('id')   
                     documents_data.append(doc_data)
         
-        # Prepare final data
+       
         final_data = building_data.copy()
         
-        # Only include build_comp in the data if it was explicitly provided
+      
         if documents_provided:
             final_data['build_comp'] = documents_data
             print("Documents data included:", documents_data)
@@ -385,7 +381,7 @@ class BuildingDetailView(APIView):
         
         print("Processed data:", final_data)
         
-        # Use partial=True to allow partial updates
+   
         serializer = BuildingSerializer(building, data=final_data, partial=True)
         if serializer.is_valid():
             serializer.save()
@@ -414,7 +410,7 @@ class BuildingByCompanyView(APIView):
         return Response(data)
 
 
-import json
+
 
 class UnitCreateView(APIView):
     def post(self, request):
@@ -532,7 +528,7 @@ class UnitEditView(APIView):
                 print("Serializer errors:", serializer.errors)
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # Return updated unit data
+     
         response_serializer = UnitSerializer(unit)
         print("Final response:", response_serializer.data)
         
