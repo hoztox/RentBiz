@@ -652,7 +652,7 @@ class TenancyRenewalSerializer(serializers.ModelSerializer):
         )
         
     
-        original_tenancy.status = 'closed'
+        original_tenancy.status = 'renewed'
         original_tenancy.is_close = True
         original_tenancy.save()
         
