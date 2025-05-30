@@ -529,7 +529,11 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
             if updated_unit:
                 updated_unit.unit_status = "occupied"
                 updated_unit.save()
-
+                
+        if instance.is_close:   
+            if instance.unit:
+                instance.unit.unit_status = "vacant"
+                instance.unit.save()
    
         if additional_charges_data is not None:
             PaymentSchedule.objects.filter(tenancy=instance).delete()
