@@ -187,37 +187,58 @@ class UnitSerializer(serializers.ModelSerializer):
         for doc_data in documents_data:
             UnitDocumentType.objects.create(unit=unit, **doc_data)
         return unit
-    
+        
     def update(self, instance, validated_data):
- 
+        print(f"Serializer update called with validated_data: {validated_data}")
+        
         documents_data = validated_data.pop('unit_comp', None)
- 
+        print(f"Documents data extracted: {documents_data}")
+
+        # Update main unit fields
         for attr, value in validated_data.items():
+            print(f"Setting {attr} = {value}")
             setattr(instance, attr, value)
         instance.save()
+        print("Main unit instance saved")
 
-     
         if documents_data is not None:
             existing_docs = {doc.id: doc for doc in instance.unit_comp.all()}
+            print(f"Existing documents: {list(existing_docs.keys())}")
             updated_ids = []
 
             for doc_data in documents_data:
-                doc_id = doc_data.get('id', None)
+                print(f"Processing document data: {doc_data}")
+                doc_id = doc_data.get('id')
+                
                 if doc_id and doc_id in existing_docs:
-            
                     doc_instance = existing_docs[doc_id]
+                    print(f"Updating existing document {doc_id}")
+                    
                     for attr, value in doc_data.items():
-                        setattr(doc_instance, attr, value)
+                        if attr == 'upload_file':
+                            if value and hasattr(value, 'read'):
+                                print(f"Setting file {value.name} on document {doc_id}")
+                                setattr(doc_instance, attr, value)
+                            else:
+                                print(f"No valid file found for document {doc_id}, value: {value}")
+                        else:
+                            setattr(doc_instance, attr, value)
+                    
                     doc_instance.save()
+                    print(f"Document {doc_id} saved with file: {doc_instance.upload_file}")
                     updated_ids.append(doc_id)
                 else:
-       
-                    UnitDocumentType.objects.create(unit=instance, **doc_data)
- 
+                    print(f"Creating new document with data: {doc_data}")
+                    new_doc = UnitDocumentType.objects.create(unit=instance, **doc_data)
+                    print(f"New document created with ID: {new_doc.id}, file: {new_doc.upload_file}")
+
+            # Delete documents not in the update
             for doc_id in existing_docs:
                 if doc_id not in updated_ids:
+                    print(f"Deleting document {doc_id}")
                     existing_docs[doc_id].delete()
 
+        print("Serializer update completed")
         return instance
 
     
@@ -248,8 +269,8 @@ class TenantDocumentTypeSerializer(serializers.ModelSerializer):
 
 class TenantGetSerializer(serializers.ModelSerializer):
     user = UserSerializer()
-    id_type = IDTypeSerializer( required=False)
-    sponser_id_type = IDTypeSerializer( required=False)
+    id_type = IDTypeSerializer()
+    sponser_id_type = IDTypeSerializer()
     tenant_comp = TenantDocumentTypeSerializer(many=True, required=False) 
     
     class Meta:
@@ -269,20 +290,42 @@ class TenantSerializer(serializers.ModelSerializer):
         building = Tenant.objects.create(**validated_data)
         for doc_data in documents_data:
             TenantDocumentType.objects.create(tenant=building, **doc_data)
-        return building
+            return building
     def update(self, instance, validated_data):
-        documents_data = validated_data.pop('tenant_comp', [])
+        documents_data = validated_data.pop('tenant_comp', None)
 
+        # Update tenant fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
+        if documents_data is not None:
+            existing_docs = {doc.id: doc for doc in instance.tenant_comp.all()}
+            new_doc_ids = []
 
-        instance.tenant_comp.all().delete()
-        for doc_data in documents_data:
-            TenantDocumentType.objects.create(tenant=instance, **doc_data)
+            for doc_data in documents_data:
+                doc_id = doc_data.get('id')
+                if doc_id and doc_id in existing_docs:
+                    # Update existing document
+                    doc_instance = existing_docs[doc_id]
+                    for attr, value in doc_data.items():
+                        if attr != 'id':
+                            setattr(doc_instance, attr, value)
+                    doc_instance.save()
+                    new_doc_ids.append(doc_id)
+                else:
+                    # Create new document
+                    new_doc = TenantDocumentType.objects.create(tenant=instance, **doc_data)
+                    new_doc_ids.append(new_doc.id)
+
+            # Delete documents that are not in the updated list
+            for doc_id, doc_instance in existing_docs.items():
+                if doc_id not in new_doc_ids:
+                    doc_instance.delete()
 
         return instance
+
+
 
 
 class ChargeCodeSerializer(serializers.ModelSerializer):
@@ -308,183 +351,237 @@ class ChargesGetSerializer(serializers.ModelSerializer):
         
  
 
-class AdditionalChargeSerializer(serializers.Serializer):
-    charge_type = serializers.PrimaryKeyRelatedField(queryset=Charges.objects.all())
-    amount = serializers.DecimalField(max_digits=12, decimal_places=2)
-    reason = serializers.CharField(max_length=255, allow_blank=True)
-    due_date = serializers.DateField()
-
-class TenancyCreateSerializer(serializers.ModelSerializer):
-    additional_charges = AdditionalChargeSerializer(many=True, required=False)
-
-    class Meta:
-        model = Tenancy
-        fields = '__all__'
-
-    def validate(self, data):
-        """Validate the tenancy data"""
-        if data.get('rent_per_frequency') and not data.get('no_payments'):
-            raise serializers.ValidationError("Number of payments is required when rent frequency is provided")
-        
-        if data.get('no_payments') and not data.get('rent_per_frequency'):
-            raise serializers.ValidationError("Rent per frequency is required when number of payments is provided")
-        
-        if data.get('start_date') and data.get('end_date'):
-            if data['start_date'] >= data['end_date']:
-                raise serializers.ValidationError("End date must be after start date")
-
-        # Validate additional charges
-        additional_charges = data.get('additional_charges', [])
-        for charge in additional_charges:
-            if charge['amount'] <= 0:
-                raise serializers.ValidationError("Additional charge amount must be greater than 0")
-            if not charge.get('reason'):
-                raise serializers.ValidationError("Reason is required for additional charges")
-            if not charge.get('due_date'):
-                raise serializers.ValidationError("Due date is required for additional charges")
-
-        return data
-
-    @transaction.atomic
-    def create(self, validated_data):
-        """Create tenancy and generate payment schedules"""
-        # Extract additional charges data
-        additional_charges_data = validated_data.pop('additional_charges', [])
-        
-        # Create the tenancy
-        tenancy = super().create(validated_data)
-        
-        # Generate payment schedules
-        self._create_payment_schedules(tenancy, additional_charges_data)
-        
-        return tenancy
-    
-    def _create_payment_schedules(self, tenancy, additional_charges_data):
-        """Create payment schedules based on tenancy data and additional charges"""
-        payment_schedules = []
-        
-        # Get existing charge types (don't create new ones)
-        try:
-            rent_charge = Charges.objects.get(name='Rent')
-        except Charges.DoesNotExist:
-            raise serializers.ValidationError("Rent charge type not found. Please create it first.")
-        
-        try:
-            deposit_charge = Charges.objects.get(name='Deposit')
-        except Charges.DoesNotExist:
-            deposit_charge = None
-        
-        try:
-            commission_charge = Charges.objects.get(name='Commission')
-        except Charges.DoesNotExist:
-            commission_charge = None
-        
-        # Create deposit payment schedule if deposit exists and deposit charge exists
-        if tenancy.deposit and tenancy.deposit > 0 and deposit_charge:
-            vat_amount = Decimal('0.00')
-            if deposit_charge.vat_percentage:
-                vat_amount = (tenancy.deposit * Decimal(str(deposit_charge.vat_percentage))) / Decimal('100')
-            
-            deposit_schedule = PaymentSchedule(
-                tenancy=tenancy,
-                charge_type=deposit_charge,
-                reason='Deposit',
-                due_date=tenancy.start_date or tenancy.first_rent_due_on,
-                status='pending',
-                amount=tenancy.deposit,
-                vat=vat_amount
-            )
-            payment_schedules.append(deposit_schedule)
-        
-        # Create commission payment schedule if commission exists and commission charge exists
-        if tenancy.commision and tenancy.commision > 0 and commission_charge:
-            vat_amount = Decimal('0.00')
-            if commission_charge.vat_percentage:
-                vat_amount = (tenancy.commision * Decimal(str(commission_charge.vat_percentage))) / Decimal('100')
-            
-            commission_schedule = PaymentSchedule(
-                tenancy=tenancy,
-                charge_type=commission_charge,
-                reason='Commission',
-                due_date=tenancy.start_date or tenancy.first_rent_due_on,
-                status='pending',
-                amount=tenancy.commision,
-                vat=vat_amount
-            )
-            payment_schedules.append(commission_schedule)
-        
-        # Create monthly rent payment schedules
-        if tenancy.rent_per_frequency and tenancy.no_payments:
-            base_due_date = tenancy.first_rent_due_on or tenancy.start_date
-            rent_vat_amount = Decimal('0.00')
-            if rent_charge.vat_percentage:
-                rent_vat_amount = (tenancy.rent_per_frequency * Decimal(str(rent_charge.vat_percentage))) / Decimal('100')
-            
-            for i in range(tenancy.no_payments):
-                due_date = base_due_date + timedelta(days=30 * i)
-                rent_schedule = PaymentSchedule(
-                    tenancy=tenancy,
-                    charge_type=rent_charge,
-                    reason='Monthly Rent',
-                    due_date=due_date,
-                    status='pending',
-                    amount=tenancy.rent_per_frequency,
-                    vat=rent_vat_amount
-                )
-                payment_schedules.append(rent_schedule)
-        
-        # Create payment schedules for additional charges
-        for charge_data in additional_charges_data:
-            charge_type = charge_data['charge_type']
-            vat_amount = Decimal('0.00')
-            if charge_type.vat_percentage:
-                vat_amount = (charge_data['amount'] * Decimal(str(charge_type.vat_percentage))) / Decimal('100')
-            
-            additional_schedule = PaymentSchedule(
-                tenancy=tenancy,
-                charge_type=charge_type,
-                reason=charge_data['reason'],
-                due_date=charge_data['due_date'],
-                status='pending',
-                amount=charge_data['amount'],
-                vat=vat_amount
-            )
-            payment_schedules.append(additional_schedule)
-        
  
-        PaymentSchedule.objects.bulk_create(payment_schedules)
-    @transaction.atomic
-    def update(self, instance, validated_data):
-        
-            additional_charges_data = validated_data.pop('additional_charges', [])
-
-        
-            for attr, value in validated_data.items():
-                setattr(instance, attr, value)
-            instance.save()
-
-        
-            PaymentSchedule.objects.filter(tenancy=instance).delete()
-
-    
-            self._create_payment_schedules(instance, additional_charges_data)
-
-            return instance
 
 class PaymentScheduleSerializer(serializers.ModelSerializer):
     charge_type_name = serializers.CharField(source='charge_type.name', read_only=True)
-    
+
     class Meta:
         model = PaymentSchedule
         fields = '__all__'
+        extra_kwargs = {
+            'tenancy': {'required': False, 'allow_null': True},
+            'charge_type': {'required': False, 'allow_null': True},
+            'amount': {'required': False, 'allow_null': True},
+            'reason': {'required': False, 'allow_null': True},
+            'due_date': {'required': False, 'allow_null': True},
+            'vat': {'required': False, 'allow_null': True},
+            'total': {'required': False, 'allow_null': True},
+        }
 
+
+class AdditionalChargeSerializer(serializers.ModelSerializer):
+    charge_type = serializers.CharField(source='charge_type.name', read_only=True)
+
+    class Meta:
+        model = AdditionalCharge
+        fields = '__all__'
+        extra_kwargs = {
+            'tenancy': {'required': False, 'allow_null': True},
+            'charge_type': {'required': False, 'allow_null': True},
+            'amount': {'required': False, 'allow_null': True},
+            'reason': {'required': False, 'allow_null': True},
+            'due_date': {'required': False, 'allow_null': True},
+            'vat': {'required': False, 'allow_null': True},
+            'total': {'required': False, 'allow_null': True},
+        }
+
+
+class TenancyCreateSerializer(serializers.ModelSerializer):
+    additional_charges = AdditionalChargeSerializer(many=True, required=False)
+    payment_schedules = PaymentScheduleSerializer(many=True, read_only=True, required=False)
+    class Meta:
+        model = Tenancy
+        fields = '__all__'
+    def validate(self, data):
+        return data
+    @transaction.atomic
+    def create(self, validated_data):
+        additional_charges_data = self.initial_data.get('additional_charges', [])
+        validated_data.pop('additional_charges', None)
+        tenancy = super().create(validated_data)
+   
+        self._create_payment_schedules(tenancy)
+     
+        for charge_data in additional_charges_data:
+            try:
+      
+                charge_type = Charges.objects.filter(id=charge_data['charge_type']).first()
+                if charge_type:
+                    AdditionalCharge.objects.create(
+                        tenancy=tenancy,
+                        charge_type=charge_type,
+                        amount=charge_data.get('amount'),
+                        reason=charge_data.get('reason'),
+                        due_date=charge_data.get('due_date'),
+                        vat=charge_data.get('vat'),
+                        total=charge_data.get('total'),
+                    )
+                else:
+                 
+                    print(f"Warning: Charge type with id {charge_data['charge_type']} not found")
+            except Exception as e:
+          
+                print(f"Error creating additional charge: {e}")
+                continue
+        return tenancy
+    def _create_payment_schedules(self, tenancy):
+        from decimal import Decimal
+        from datetime import timedelta
+        payment_schedules = []
+
+        rent_charge = Charges.objects.filter(name='Rent').first()
+        deposit_charge = Charges.objects.filter(name='Deposit').first()
+        commission_charge = Charges.objects.filter(name='Commission').first()
+
+        if tenancy.deposit and deposit_charge:
+            vat_amount = Decimal('0.00')
+            if deposit_charge.vat_percentage:
+                vat_amount = (tenancy.deposit * Decimal(str(deposit_charge.vat_percentage))) / Decimal('100')
+            total = tenancy.deposit + vat_amount
+            payment_schedules.append(PaymentSchedule(
+                tenancy=tenancy,
+                charge_type=deposit_charge,
+                reason='Deposit',
+                due_date=tenancy.start_date,
+                status='pending',
+                amount=tenancy.deposit,
+                vat=vat_amount,
+                total=total
+            ))
+
+        if tenancy.commision and commission_charge:
+            vat_amount = Decimal('0.00')
+            if commission_charge.vat_percentage:
+                vat_amount = (tenancy.commision * Decimal(str(commission_charge.vat_percentage))) / Decimal('100')
+            total = tenancy.commision + vat_amount
+            payment_schedules.append(PaymentSchedule(
+                tenancy=tenancy,
+                charge_type=commission_charge,
+                reason='Commission',
+                due_date=tenancy.start_date,
+                status='pending',
+                amount=tenancy.commision,
+                vat=vat_amount,
+                total = total
+
+            ))
+
+        if tenancy.rent_per_frequency and tenancy.no_payments and rent_charge:
+            rent_vat = Decimal('0.00')
+            if rent_charge.vat_percentage:
+                rent_vat = (tenancy.rent_per_frequency * Decimal(str(rent_charge.vat_percentage))) / Decimal('100')
+
+            rental_months = tenancy.rental_months or 12
+            payment_frequency_months = rental_months // tenancy.no_payments if tenancy.no_payments > 0 else 1
+
+            for i in range(tenancy.no_payments):
+                due_date = tenancy.first_rent_due_on
+                if i > 0:
+                    year = due_date.year
+                    month = due_date.month + (i * payment_frequency_months)
+                    while month > 12:
+                        year += 1
+                        month -= 12
+                    due_date = due_date.replace(year=year, month=month)
+
+                reason = f'{payment_frequency_months}-Monthly Rent'
+                total = tenancy.rent_per_frequency + rent_vat
+                payment_schedules.append(PaymentSchedule(
+                    tenancy=tenancy,
+                    charge_type=rent_charge,
+                    reason=reason,
+                    due_date=due_date,
+                    status='pending',
+                    amount=tenancy.rent_per_frequency,
+                    vat=rent_vat,
+                    total=total
+                ))
+
+        if payment_schedules:
+            PaymentSchedule.objects.bulk_create(payment_schedules)
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        additional_charges_data = self.initial_data.get('additional_charges', None)
+        validated_data.pop('additional_charges', None)
+
+        original_status = instance.status
+        new_status = validated_data.get('status', instance.status)
+
+       
+        previous_unit = instance.unit
+
+    
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        updated_unit = instance.unit
+
+      
+        if new_status == "active":
+        
+            if previous_unit and previous_unit != updated_unit:
+                previous_unit.unit_status = "vacant"
+                previous_unit.save()
+ 
+            if updated_unit:
+                updated_unit.unit_status = "occupied"
+                updated_unit.save()
+
+   
+        if additional_charges_data is not None:
+            PaymentSchedule.objects.filter(tenancy=instance).delete()
+            AdditionalCharge.objects.filter(tenancy=instance).delete()
+
+            for charge_data in additional_charges_data:
+                try:
+                    charge_type = Charges.objects.filter(id=charge_data['charge_type']).first()
+                    if charge_type and 'amount' in charge_data:
+                        AdditionalCharge.objects.create(
+                            tenancy=instance,
+                            charge_type=charge_type,
+                            amount=charge_data.get('amount'),
+                            reason=charge_data.get('reason'),
+                            due_date=charge_data.get('due_date'),
+                            vat=charge_data.get('vat'),
+                            total=charge_data.get('total'),
+                        )
+                except Exception as e:
+                    print(f"Error updating additional charge: {e}")
+                    continue
+
+            self._create_payment_schedules(instance)
+
+        return instance
+
+
+
+
+class PaymentScheduleGetSerializer(serializers.ModelSerializer):
+    charge_type = ChargesSerializer()
+
+    class Meta:
+        model = PaymentSchedule
+        fields = '__all__'
+        
+
+class AdditionalChargeGetSerializer(serializers.ModelSerializer):
+    charge_type = ChargesSerializer()
+
+
+    class Meta:
+        model = AdditionalCharge
+        fields = '__all__'
+         
 
 class TenancyDetailSerializer(serializers.ModelSerializer):
     tenant_name = serializers.CharField(source='tenant.name', read_only=True)
     building_name = serializers.CharField(source='building.name', read_only=True)
     unit_name = serializers.CharField(source='unit.name', read_only=True)
-    payment_schedules = PaymentScheduleSerializer(source='tenanc', many=True, read_only=True)
-    
+    payment_schedules = PaymentScheduleGetSerializer(many=True, read_only=True)
+    additional_charges = AdditionalChargeGetSerializer(many=True, read_only=True)
     class Meta:
         model = Tenancy
         fields = '__all__'
@@ -496,16 +593,167 @@ class TenancyListSerializer(serializers.ModelSerializer):
     company_name = serializers.CharField(source='company.name', read_only=True)
     building = BuildingSerializer()
     unit = UnitGetSerializer()
-    payment_schedules = PaymentScheduleSerializer(many=True, read_only=True, source='tenanc')  
- 
+    payment_schedules = PaymentScheduleGetSerializer(many=True, read_only=True) 
+    additional_charges = AdditionalChargeGetSerializer(many=True, read_only=True)
 
     class Meta:
         model = Tenancy
         fields = '__all__'
 
 
-
-
  
 
+class TenancyRenewalSerializer(serializers.ModelSerializer):
+    additional_charges = AdditionalChargeSerializer(many=True, required=False)
     
+    class Meta:
+        model = Tenancy
+        fields = [
+            'rental_months', 'start_date', 'end_date', 'no_payments', 
+            'first_rent_due_on', 'rent_per_frequency', 'deposit', 
+            'commision', 'remarks', 'additional_charges'
+        ]
+        extra_kwargs = {
+            'rental_months': {'required': True},
+            'start_date': {'required': True},
+            'end_date': {'required': True},
+            'no_payments': {'required': True},
+            'first_rent_due_on': {'required': True},
+            'rent_per_frequency': {'required': True},
+        }
+
+    def validate(self, data):
+        if data.get('start_date') and data.get('end_date'):
+            if data['start_date'] >= data['end_date']:
+                raise serializers.ValidationError("End date must be after start date")
+        return data
+
+    @transaction.atomic
+    def create(self, validated_data):
+     
+        original_tenancy_id = self.context.get('original_tenancy_id')
+        original_tenancy = Tenancy.objects.get(id=original_tenancy_id)
+        
+ 
+        additional_charges_data = self.initial_data.get('additional_charges', [])
+        validated_data.pop('additional_charges', None)
+        
+     
+        renewed_tenancy = Tenancy.objects.create(
+            user=original_tenancy.user,
+            company=original_tenancy.company,
+            tenant=original_tenancy.tenant,
+            building=original_tenancy.building,
+            unit=original_tenancy.unit,
+            previous_tenancy=original_tenancy,
+            is_reniew=True,
+            status='pending',  
+            **validated_data
+        )
+        
+    
+        original_tenancy.status = 'renewed'
+        original_tenancy.is_close = True
+        original_tenancy.save()
+        
+ 
+        self._create_payment_schedules(renewed_tenancy)
+        
+         
+        for charge_data in additional_charges_data:
+            try:
+                charge_type = Charges.objects.filter(id=charge_data['charge_type']).first()
+                if charge_type:
+                    AdditionalCharge.objects.create(
+                        tenancy=renewed_tenancy,
+                        charge_type=charge_type,
+                        amount=charge_data.get('amount'),
+                        reason=charge_data.get('reason'),
+                        due_date=charge_data.get('due_date'),
+                        vat=charge_data.get('vat'),
+                        total=charge_data.get('total'),
+                    )
+            except Exception as e:
+                print(f"Error creating additional charge: {e}")
+                continue
+        
+        return renewed_tenancy
+
+    def _create_payment_schedules(self, tenancy):
+        """Create payment schedules for the renewed tenancy"""
+        from decimal import Decimal
+        from datetime import timedelta
+        payment_schedules = []
+
+        rent_charge = Charges.objects.filter(name='Rent').first()
+        deposit_charge = Charges.objects.filter(name='Deposit').first()
+        commission_charge = Charges.objects.filter(name='Commission').first()
+
+ 
+        if tenancy.deposit and deposit_charge:
+            vat_amount = Decimal('0.00')
+            if deposit_charge.vat_percentage:
+                vat_amount = (tenancy.deposit * Decimal(str(deposit_charge.vat_percentage))) / Decimal('100')
+            total = tenancy.deposit + vat_amount
+            payment_schedules.append(PaymentSchedule(
+                tenancy=tenancy,
+                charge_type=deposit_charge,
+                reason='Deposit',
+                due_date=tenancy.start_date,
+                status='pending',
+                amount=tenancy.deposit,
+                vat=vat_amount,
+                total=total
+            ))
+
+ 
+        if tenancy.commision and commission_charge:
+            vat_amount = Decimal('0.00')
+            if commission_charge.vat_percentage:
+                vat_amount = (tenancy.commision * Decimal(str(commission_charge.vat_percentage))) / Decimal('100')
+            total = tenancy.commision + vat_amount
+            payment_schedules.append(PaymentSchedule(
+                tenancy=tenancy,
+                charge_type=commission_charge,
+                reason='Commission',
+                due_date=tenancy.start_date,
+                status='pending',
+                amount=tenancy.commision,
+                vat=vat_amount,
+                total=total
+            ))
+
+      
+        if tenancy.rent_per_frequency and tenancy.no_payments and rent_charge:
+            rent_vat = Decimal('0.00')
+            if rent_charge.vat_percentage:
+                rent_vat = (tenancy.rent_per_frequency * Decimal(str(rent_charge.vat_percentage))) / Decimal('100')
+
+            rental_months = tenancy.rental_months or 12
+            payment_frequency_months = rental_months // tenancy.no_payments if tenancy.no_payments > 0 else 1
+
+            for i in range(tenancy.no_payments):
+                due_date = tenancy.first_rent_due_on
+                if i > 0:
+                    year = due_date.year
+                    month = due_date.month + (i * payment_frequency_months)
+                    while month > 12:
+                        year += 1
+                        month -= 12
+                    due_date = due_date.replace(year=year, month=month)
+
+                reason = f'{payment_frequency_months}-Monthly Rent'
+                total = tenancy.rent_per_frequency + rent_vat
+                payment_schedules.append(PaymentSchedule(
+                    tenancy=tenancy,
+                    charge_type=rent_charge,
+                    reason=reason,
+                    due_date=due_date,
+                    status='pending',
+                    amount=tenancy.rent_per_frequency,
+                    vat=rent_vat,
+                    total=total
+                ))
+
+        if payment_schedules:
+            PaymentSchedule.objects.bulk_create(payment_schedules)
