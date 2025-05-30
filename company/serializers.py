@@ -269,8 +269,8 @@ class TenantDocumentTypeSerializer(serializers.ModelSerializer):
 
 class TenantGetSerializer(serializers.ModelSerializer):
     user = UserSerializer()
-    id_type = IDTypeSerializer( required=False)
-    sponser_id_type = IDTypeSerializer( required=False)
+    id_type = IDTypeSerializer()
+    sponser_id_type = IDTypeSerializer()
     tenant_comp = TenantDocumentTypeSerializer(many=True, required=False) 
     
     class Meta:

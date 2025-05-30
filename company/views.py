@@ -480,13 +480,7 @@ class UnitsByCompanyView(APIView):
         serializer = UnitGetSerializer(units, many=True)
         return Response(serializer.data)
     
-    
-import json
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from .models import Units, UnitDocumentType
-from .serializers import UnitSerializer
+ 
 
 class UnitEditView(APIView):
     def put(self, request, pk):
@@ -498,36 +492,36 @@ class UnitEditView(APIView):
         except Units.DoesNotExist:
             return Response({'error': 'Unit not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Handle file upload separately if present
+     
         if 'upload_file' in request.FILES:
             uploaded_file = request.FILES['upload_file']
             print(f"Processing file: {uploaded_file.name}")
             
-            # Find existing document or create new one
-            existing_doc = unit.unit_comp.first()  # Get first document
+            
+            existing_doc = unit.unit_comp.first()  
             
             if existing_doc:
-                # Update existing document
+       
                 existing_doc.upload_file = uploaded_file
                 existing_doc.save()
                 print(f"Updated existing document {existing_doc.id} with file: {existing_doc.upload_file}")
             else:
-                # Create new document
+        
                 new_doc = UnitDocumentType.objects.create(
                     unit=unit,
                     upload_file=uploaded_file,
                     number='AUTO-' + str(unit.id),
-                    doc_type_id=1  # Set appropriate default
+                    doc_type_id=1   
                 )
                 print(f"Created new document {new_doc.id} with file: {new_doc.upload_file}")
 
-        # Process other unit data (excluding files)
+     
         unit_data = {}
         for key, value in request.data.items():
             if key not in ['upload_file', 'unit_comp_json'] and not key.startswith('document_file_'):
                 unit_data[key] = value
 
-        # Update unit if there's other data to update
+   
         if unit_data:
             serializer = UnitSerializer(unit, data=unit_data, partial=True)
             if serializer.is_valid():
@@ -1074,3 +1068,30 @@ class BuildingsWithOccupiedUnitsView(APIView):
         serializer = BuildingSerializer(buildings, many=True)
         return Response(serializer.data)
     
+
+
+class RenewTenancyView(APIView):
+    def post(self, request, tenancy_id):
+        old_tenancy = get_object_or_404(Tenancy, id=tenancy_id)
+
+     
+        data = request.data.copy()
+
+ 
+        data['tenant'] = old_tenancy.tenant.id
+        data['unit'] = old_tenancy.unit.id
+        data['building'] = old_tenancy.building.id
+        data['company'] = old_tenancy.company.id if old_tenancy.company else None
+        data['user'] = request.user.id
+        data['is_reniew'] = True
+        data['previous_tenancy'] = old_tenancy.id
+
+        serializer = TenancySerializer(data=data)
+        if serializer.is_valid():
+            tenancy = serializer.save()
+            return Response({
+                'message': 'Tenancy renewed successfully.',
+                'new_tenancy': TenancySerializer(tenancy).data
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
