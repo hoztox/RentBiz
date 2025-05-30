@@ -358,9 +358,11 @@ class Tenancy(models.Model):
 
 
     def save(self, *args, **kwargs):
+        
         if not self.tenancy_code:
             self.tenancy_code = self.generate_tenancy_code()
-        
+
+  
         if self.rent_per_frequency and self.no_payments:
             self.total_rent_receivable = self.rent_per_frequency * Decimal(self.no_payments)
         

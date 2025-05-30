@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 from datetime import datetime, timedelta
 import jwt
 import re
+from rest_framework import generics
 
 from rest_framework import status
 from django.contrib.auth import authenticate
@@ -901,6 +902,7 @@ class TenancyCreateView(APIView):
     """Create a new tenancy with automatic payment schedule generation"""
     
     def post(self, request):
+        print("rrrrr",request.data)
         serializer = TenancyCreateSerializer(data=request.data)
         
         if serializer.is_valid():
@@ -1067,31 +1069,60 @@ class BuildingsWithOccupiedUnitsView(APIView):
         ).distinct()
         serializer = BuildingSerializer(buildings, many=True)
         return Response(serializer.data)
-    
-
-
-class RenewTenancyView(APIView):
-    def post(self, request, tenancy_id):
-        old_tenancy = get_object_or_404(Tenancy, id=tenancy_id)
-
-     
-        data = request.data.copy()
-
  
-        data['tenant'] = old_tenancy.tenant.id
-        data['unit'] = old_tenancy.unit.id
-        data['building'] = old_tenancy.building.id
-        data['company'] = old_tenancy.company.id if old_tenancy.company else None
-        data['user'] = request.user.id
-        data['is_reniew'] = True
-        data['previous_tenancy'] = old_tenancy.id
-
-        serializer = TenancySerializer(data=data)
-        if serializer.is_valid():
-            tenancy = serializer.save()
+ 
+class TenancyRenewalView(APIView):
+    """Renew an existing tenancy"""
+    
+    def post(self, request, tenancy_id):
+ 
+        original_tenancy = get_object_or_404(Tenancy, id=tenancy_id)
+        
+         
+        if original_tenancy.status not in ['active', 'terminated']:
             return Response({
-                'message': 'Tenancy renewed successfully.',
-                'new_tenancy': TenancySerializer(tenancy).data
-            }, status=status.HTTP_201_CREATED)
-        else:
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                'success': False,
+                'message': 'Only active or terminated tenancies can be renewed'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        
+        if Tenancy.objects.filter(previous_tenancy=original_tenancy).exists():
+            return Response({
+                'success': False,
+                'message': 'This tenancy has already been renewed'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        print("Renewal request data:", request.data)
+        
+    
+        serializer = TenancyRenewalSerializer(
+            data=request.data,
+            context={'original_tenancy_id': tenancy_id}
+        )
+        
+        if serializer.is_valid():
+            try:
+                renewed_tenancy = serializer.save()
+                
+    
+                detail_serializer = TenancyDetailSerializer(renewed_tenancy)
+                
+                return Response({
+                    'success': True,
+                    'message': 'Tenancy renewed successfully',
+                    'original_tenancy_id': original_tenancy.id,
+                    'renewed_tenancy': detail_serializer.data,
+                    'renewal_number': renewed_tenancy.get_renewal_number()
+                }, status=status.HTTP_201_CREATED)
+                
+            except Exception as e:
+                return Response({
+                    'success': False,
+                    'message': f'Error renewing tenancy: {str(e)}'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        return Response({
+            'success': False,
+            'message': 'Validation failed',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
