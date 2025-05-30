@@ -254,34 +254,167 @@ class BuildingCreateView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     
+# class BuildingDetailView(APIView):
+#     def get_object(self, pk):
+#         try:
+#             return Building.objects.get(pk=pk)
+#         except Building.DoesNotExist:
+#             return None
+
+#     def get(self, request, pk):
+#         building = self.get_object(pk)
+#         if not building:
+#             return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+#         serializer = BuildingSerializer(building)
+#         unit_count = building.unit_building.count()  
+
+#         data = serializer.data
+#         data['unit_count'] = unit_count   
+
+#         return Response(data)
+
+#     def put(self, request, pk):
+#         building = self.get_object(pk)
+#         if not building:
+#             return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+#         print("Request data:", request.data)
+        
+     
+#         def get_value_or_none(key, convert_type=None):
+#             value = request.data.get(key, '')
+#             if value == '' or value is None:
+#                 return None
+#             if convert_type:
+#                 try:
+#                     return convert_type(value)
+#                 except (ValueError, TypeError):
+#                     return None
+#             return value
+        
+      
+#         building_data = {
+#             'company': request.data.get('company'),
+#             'building_name': request.data.get('building_name'),
+#             'building_no': request.data.get('building_no'),
+#             'plot_no': request.data.get('plot_no'),
+#             'description': get_value_or_none('description'),
+#             'remarks': get_value_or_none('remarks'),
+#             'latitude': get_value_or_none('latitude', float),
+#             'longitude': get_value_or_none('longitude', float),
+#             'status': get_value_or_none('status') or building.status,
+
+#             'land_mark': get_value_or_none('land_mark'),
+#             'building_address': get_value_or_none('building_address'),
+#         }
+        
+     
+#         documents_data = []
+#         documents_provided = False   
+        
+        
+#         if 'build_comp' in request.data:
+#             documents_provided = True
+            
+   
+#             if isinstance(request.data['build_comp'], list):
+#                 documents_data = request.data['build_comp']
+#             else:
+ 
+#                 document_groups = defaultdict(dict)
+                
+#                 for key, value in request.data.items():
+#                     if key.startswith('build_comp['):
+#                         match = re.match(r'build_comp\[(\d+)\]\[(\w+)\]', key)
+#                         if match:
+#                             index = int(match.group(1))
+#                             field_name = match.group(2)
+#                             document_groups[index][field_name] = value
+                
+#                 for index in sorted(document_groups.keys()):
+#                     doc_data = document_groups[index]
+                  
+#                     if any(key in doc_data for key in ['doc_type', 'number', 'issued_date', 'expiry_date', 'upload_file']):
+              
+#                         if 'id' in doc_data and doc_data['id']:
+#                             try:
+#                                 doc_data['id'] = int(doc_data['id'])
+#                             except (ValueError, TypeError):
+#                                 doc_data.pop('id')  
+#                         documents_data.append(doc_data)
+        
+  
+#         elif any(key.startswith('build_comp[') for key in request.data.keys()):
+#             documents_provided = True
+        
+#             document_groups = defaultdict(dict)
+            
+#             for key, value in request.data.items():
+#                 if key.startswith('build_comp['):
+#                     match = re.match(r'build_comp\[(\d+)\]\[(\w+)\]', key)
+#                     if match:
+#                         index = int(match.group(1))
+#                         field_name = match.group(2)
+#                         document_groups[index][field_name] = value
+            
+#             for index in sorted(document_groups.keys()):
+#                 doc_data = document_groups[index]
+               
+#                 if any(key in doc_data for key in ['doc_type', 'number', 'issued_date', 'expiry_date', 'upload_file']):
+          
+#                     if 'id' in doc_data and doc_data['id']:
+#                         try:
+#                             doc_data['id'] = int(doc_data['id'])
+#                         except (ValueError, TypeError):
+#                             doc_data.pop('id')   
+#                     documents_data.append(doc_data)
+        
+       
+#         final_data = building_data.copy()
+        
+      
+#         if documents_provided:
+#             final_data['build_comp'] = documents_data
+#             print("Documents data included:", documents_data)
+#         else:
+#             print("No document data provided - preserving existing documents")
+        
+#         print("Processed data:", final_data)
+        
+   
+#         serializer = BuildingSerializer(building, data=final_data, partial=True)
+#         if serializer.is_valid():
+#             serializer.save()
+#             return Response(serializer.data)
+        
+#         print("Serializer errors:", serializer.errors)
+#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+#     def delete(self, request, pk):
+#         building = self.get_object(pk)
+#         if not building:
+#             return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
+#         building.delete()
+#         return Response({'message': 'Building deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
 class BuildingDetailView(APIView):
     def get_object(self, pk):
         try:
             return Building.objects.get(pk=pk)
         except Building.DoesNotExist:
             return None
-
     def get(self, request, pk):
         building = self.get_object(pk)
         if not building:
             return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
-        
         serializer = BuildingSerializer(building)
-        unit_count = building.unit_building.count()  
-
-        data = serializer.data
-        data['unit_count'] = unit_count   
-
-        return Response(data)
-
+        return Response(serializer.data)
     def put(self, request, pk):
         building = self.get_object(pk)
         if not building:
             return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
-        
-        print("Request data:", request.data)
-        
-     
+        # Helper function to handle empty values
         def get_value_or_none(key, convert_type=None):
             value = request.data.get(key, '')
             if value == '' or value is None:
@@ -292,8 +425,7 @@ class BuildingDetailView(APIView):
                 except (ValueError, TypeError):
                     return None
             return value
-        
-      
+        # Process building data
         building_data = {
             'company': request.data.get('company'),
             'building_name': request.data.get('building_name'),
@@ -307,22 +439,17 @@ class BuildingDetailView(APIView):
             'land_mark': get_value_or_none('land_mark'),
             'building_address': request.data.get('building_address'),
         }
-        
-     
+        # Process document data
         documents_data = []
-        documents_provided = False   
-        
-        
+        document_files = []
+        # Handle both form-data and JSON formats
         if 'build_comp' in request.data:
-            documents_provided = True
-            
-   
+            # JSON format
             if isinstance(request.data['build_comp'], list):
                 documents_data = request.data['build_comp']
             else:
- 
+                # Form-data format
                 document_groups = defaultdict(dict)
-                
                 for key, value in request.data.items():
                     if key.startswith('build_comp['):
                         match = re.match(r'build_comp\[(\d+)\]\[(\w+)\]', key)
@@ -330,73 +457,50 @@ class BuildingDetailView(APIView):
                             index = int(match.group(1))
                             field_name = match.group(2)
                             document_groups[index][field_name] = value
-                
                 for index in sorted(document_groups.keys()):
-                    doc_data = document_groups[index]
-                  
-                    if any(key in doc_data for key in ['doc_type', 'number', 'issued_date', 'expiry_date', 'upload_file']):
-              
-                        if 'id' in doc_data and doc_data['id']:
-                            try:
-                                doc_data['id'] = int(doc_data['id'])
-                            except (ValueError, TypeError):
-                                doc_data.pop('id')  
-                        documents_data.append(doc_data)
-        
-  
-        elif any(key.startswith('build_comp[') for key in request.data.keys()):
-            documents_provided = True
-        
-            document_groups = defaultdict(dict)
-            
-            for key, value in request.data.items():
-                if key.startswith('build_comp['):
-                    match = re.match(r'build_comp\[(\d+)\]\[(\w+)\]', key)
-                    if match:
-                        index = int(match.group(1))
-                        field_name = match.group(2)
-                        document_groups[index][field_name] = value
-            
-            for index in sorted(document_groups.keys()):
-                doc_data = document_groups[index]
-               
-                if any(key in doc_data for key in ['doc_type', 'number', 'issued_date', 'expiry_date', 'upload_file']):
-          
-                    if 'id' in doc_data and doc_data['id']:
-                        try:
-                            doc_data['id'] = int(doc_data['id'])
-                        except (ValueError, TypeError):
-                            doc_data.pop('id')   
-                    documents_data.append(doc_data)
-        
-       
-        final_data = building_data.copy()
-        
-      
-        if documents_provided:
-            final_data['build_comp'] = documents_data
-            print("Documents data included:", documents_data)
-        else:
-            print("No document data provided - preserving existing documents")
-        
-        print("Processed data:", final_data)
-        
-   
-        serializer = BuildingSerializer(building, data=final_data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        
-        print("Serializer errors:", serializer.errors)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+                    documents_data.append(document_groups[index])
+        # Handle file uploads separately
+        for file_key, file_obj in request.FILES.items():
+            if file_key.startswith('build_comp['):
+                match = re.match(r'build_comp\[(\d+)\]\[upload_file\]', file_key)
+                if match:
+                    index = int(match.group(1))
+                    if index < len(documents_data):
+                        documents_data[index]['upload_file'] = file_obj
+        try:
+            with transaction.atomic():
+                # Update building data
+                building_serializer = BuildingSerializer(building, data=building_data, partial=True)
+                if not building_serializer.is_valid():
+                    return Response(building_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                updated_building = building_serializer.save()
+                # Handle documents
+                if documents_data:
+                    # First delete existing documents if we're replacing them
+                    DocumentType.objects.filter(building=updated_building).delete()
+                    # Create new documents
+                    for doc_data in documents_data:
+                        doc_serializer = DocumentTypeSerializer(data={
+                            'building': updated_building.id,
+                            'doc_type': doc_data.get('doc_type'),
+                            'number': doc_data.get('number'),
+                            'issued_date': doc_data.get('issued_date'),
+                            'expiry_date': doc_data.get('expiry_date'),
+                            'upload_file': doc_data.get('upload_file'),
+                        })
+                        if not doc_serializer.is_valid():
+                            return Response(doc_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                        doc_serializer.save()
+                return Response(building_serializer.data)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     def delete(self, request, pk):
         building = self.get_object(pk)
         if not building:
             return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
         building.delete()
         return Response({'message': 'Building deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
-    
+
 class BuildingByCompanyView(APIView):
     def get(self, request, company_id):
         buildings = Building.objects.filter(company__id=company_id)
