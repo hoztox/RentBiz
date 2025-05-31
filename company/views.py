@@ -23,64 +23,119 @@ from django.utils import timezone
 import json
  
 
+ 
+ 
 class CompanyLoginView(APIView):
     def post(self, request, *args, **kwargs):
+        print("=== LOGIN REQUEST DEBUG ===")
+        print("Request data:", request.data)
+        
         username = request.data.get('username')
         password = request.data.get('password')
-
+        
+        print(f"Username received: '{username}'")
+        print(f"Password received: '{password}'")
+        
         if not username or not password:
+            print("Missing username or password")
             return Response({'error': 'Username and password must be provided'}, status=status.HTTP_400_BAD_REQUEST)
-
+        
  
+        print("\n--- Checking for USER ---")
         try:
             user = Users.objects.get(username=username)
+            print(f"Found user: {user.name} (ID: {user.id})")
+            print(f"User status: {user.status}")
+            
             if user.status == 'blocked':
+                print("User is blocked")
                 return Response({'error': 'Your account is blocked. Please contact support.'}, status=status.HTTP_403_FORBIDDEN)
-            if not user.check_password(password):
+            
+            print(f"Checking user password...")
+            password_check = user.check_password(password)
+            print(f"User password check result: {password_check}")
+            
+            if not password_check:
+                print("User password check failed, continuing to company check")
                 raise Users.DoesNotExist()
-
+            
+            print("User login successful, generating tokens...")
             refresh = RefreshToken()
             access_token = refresh.access_token
             access_token['user_id'] = user.id
             access_token['role'] = 'user'
-
+            
             refresh['user_id'] = user.id
             refresh['role'] = 'user'
-
-            return Response({
+            
+            response_data = {
                 'id': user.id,
                 'username': user.username,
                 'name': user.name,
                 'email': user.email,
-                 
                 'status': user.status,
                 'created_at': user.created_at.strftime('%Y-%m-%d %H:%M:%S'),
                 'company_id': user.company.id if user.company else None,
-                'role': user.user_role,
+                'role': 'user',
+                'user_role': user.user_role,
                 'access': str(access_token),
                 'refresh': str(refresh),
-            }, status=status.HTTP_200_OK)
-
+            }
+            print("User login response:", response_data)
+            return Response(response_data, status=status.HTTP_200_OK)
+            
         except Users.DoesNotExist:
-            pass  
-
-      
+            print("User not found or password incorrect")
+        
+        # Try to find company
+        print("\n--- Checking for COMPANY ---")
         try:
+            print(f"Looking for company with user_id: '{username}'")
             company = Company.objects.get(user_id=username)
+            print(f"Found company: {company.company_name} (ID: {company.id})")
+            print(f"Company user_id: {company.user_id}")
+            print(f"Company status: {company.status}")
+            print(f"Company password hash: {company.password[:50]}..." if company.password else "No password set")
+            
             if company.status == 'blocked':
+                print("Company is blocked")
                 return Response({'error': 'Your company is blocked. Please contact support.'}, status=status.HTTP_403_FORBIDDEN)
-            if not company.check_password(password):
-                raise Company.DoesNotExist()
-
+            
+            print(f"Checking company password...")
+            password_check = company.check_password(password)
+            print(f"Company password check result: {password_check}")
+            
+            # If password check fails, try to detect if it's a plain text password
+            if not password_check:
+                print("Password check failed, checking if password is stored as plain text...")
+                
+                # Check if the stored password matches the input password directly (plain text)
+                if company.password == password:
+                    print("Password was stored as plain text! Fixing it now...")
+                    # Hash the password properly
+                    company.set_password(password)
+                    print("Password has been hashed and saved properly")
+                    
+                    # Now the password check should work
+                    password_check = company.check_password(password)
+                    print(f"Password check after fixing: {password_check}")
+                else:
+                    print("Password doesn't match plain text either")
+                
+                if not password_check:
+                    print("Company password check failed even after plain text fix")
+                    raise Company.DoesNotExist()
+            
+            print("Company login successful, generating tokens...")
             refresh = RefreshToken()
             access_token = refresh.access_token
             access_token['user_id'] = company.user_id
             access_token['role'] = 'company'
-
+            
             refresh['user_id'] = company.user_id
             refresh['role'] = 'company'
-
-            return Response({
+            
+            response_data = {
                 'id': company.id,
                 'user_id': company.user_id,
                 'company_name': company.company_name,
@@ -95,12 +150,16 @@ class CompanyLoginView(APIView):
                 'role': 'company',
                 'access': str(access_token),
                 'refresh': str(refresh),
-            }, status=status.HTTP_200_OK)
-
+            }
+            print("Company login response:", response_data)
+            return Response(response_data, status=status.HTTP_200_OK)
+            
         except Company.DoesNotExist:
+            print("Company not found or password incorrect")
+            print("=== LOGIN FAILED ===")
             return Response({'error': 'Invalid username or password'}, status=status.HTTP_401_UNAUTHORIZED)
 
-
+ 
 
 
 
