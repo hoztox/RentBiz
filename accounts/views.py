@@ -91,3 +91,13 @@ class CompanyDetailAPIView(APIView):
         company = get_object_or_404(Company, pk=pk)
         company.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CompanyDetailView(APIView):
+    def get(self, request, company_id):
+        try:
+            company = Company.objects.get(id=company_id)
+            serializer = CompanySerializer(company)
+            return Response(serializer.data)
+        except Company.DoesNotExist:
+            return Response({'error': 'Company not found'}, status=404)

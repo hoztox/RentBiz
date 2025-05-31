@@ -12,6 +12,7 @@ urlpatterns = [
     path('users/create/', UserCreateAPIView.as_view(), name='user-create'),
     path('users/company/<int:company_id>/', UserListByCompanyAPIView.as_view(), name='user-list-by-company'),
     path('users/<int:user_id>/', UserDetailAPIView.as_view(), name='user-detail'),
+    path('user/<int:user_id>/details/', UserDetailView.as_view(), name='user-detail'),
     
     
     # Building Properties

@@ -1285,3 +1285,13 @@ class TenancyRenewalView(APIView):
             'message': 'Validation failed',
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+        
+        
+class UserDetailView(APIView):
+    def get(self, request, user_id):
+        try:
+            user = Users.objects.get(id=user_id)
+            serializer = UserSerializer(user)
+            return Response(serializer.data)
+        except Users.DoesNotExist:
+            return Response({'error': 'User not found'}, status=404)
