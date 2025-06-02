@@ -1,5 +1,5 @@
-# Ignore environment files
 .env
+venv/
 
 # Ignore Python compiled files
 __pycache__/
