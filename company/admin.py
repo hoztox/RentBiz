@@ -23,3 +23,4 @@ admin.site.register(TenantDocumentType)
 
 admin.site.register(Tenancy)
 admin.site.register(PaymentSchedule)
+admin.site.register(AdditionalCharge)

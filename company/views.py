@@ -1,5 +1,6 @@
 from django.shortcuts import render
 from .serializers import *
+from .models import *
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -13,78 +14,129 @@ logger = logging.getLogger(__name__)
 from datetime import datetime, timedelta
 import jwt
 import re
-
+from rest_framework import generics
+from collections import defaultdict
 from rest_framework import status
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from collections import defaultdict
 from django.utils import timezone
+import json
+ 
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework_simplejwt.tokens import RefreshToken
-from django.contrib.auth.hashers import check_password
-from .models import Company, Users
-
+ 
+ 
 class CompanyLoginView(APIView):
     def post(self, request, *args, **kwargs):
+        print("=== LOGIN REQUEST DEBUG ===")
+        print("Request data:", request.data)
+        
         username = request.data.get('username')
         password = request.data.get('password')
-
+        
+        print(f"Username received: '{username}'")
+        print(f"Password received: '{password}'")
+        
         if not username or not password:
+            print("Missing username or password")
             return Response({'error': 'Username and password must be provided'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # 1. Try to log in as User
+        
+ 
+        print("\n--- Checking for USER ---")
         try:
             user = Users.objects.get(username=username)
+            print(f"Found user: {user.name} (ID: {user.id})")
+            print(f"User status: {user.status}")
+            
             if user.status == 'blocked':
+                print("User is blocked")
                 return Response({'error': 'Your account is blocked. Please contact support.'}, status=status.HTTP_403_FORBIDDEN)
-            if not user.check_password(password):
+            
+            print(f"Checking user password...")
+            password_check = user.check_password(password)
+            print(f"User password check result: {password_check}")
+            
+            if not password_check:
+                print("User password check failed, continuing to company check")
                 raise Users.DoesNotExist()
-
+            
+            print("User login successful, generating tokens...")
             refresh = RefreshToken()
             access_token = refresh.access_token
             access_token['user_id'] = user.id
             access_token['role'] = 'user'
-
+            
             refresh['user_id'] = user.id
             refresh['role'] = 'user'
-
-            return Response({
+            
+            response_data = {
                 'id': user.id,
                 'username': user.username,
                 'name': user.name,
                 'email': user.email,
-                 
                 'status': user.status,
                 'created_at': user.created_at.strftime('%Y-%m-%d %H:%M:%S'),
                 'company_id': user.company.id if user.company else None,
-                'role': user.user_role,
+                'role': 'user',
+                'user_role': user.user_role,
                 'access': str(access_token),
                 'refresh': str(refresh),
-            }, status=status.HTTP_200_OK)
-
+            }
+            print("User login response:", response_data)
+            return Response(response_data, status=status.HTTP_200_OK)
+            
         except Users.DoesNotExist:
-            pass  
-
-      
+            print("User not found or password incorrect")
+        
+        # Try to find company
+        print("\n--- Checking for COMPANY ---")
         try:
+            print(f"Looking for company with user_id: '{username}'")
             company = Company.objects.get(user_id=username)
+            print(f"Found company: {company.company_name} (ID: {company.id})")
+            print(f"Company user_id: {company.user_id}")
+            print(f"Company status: {company.status}")
+            print(f"Company password hash: {company.password[:50]}..." if company.password else "No password set")
+            
             if company.status == 'blocked':
+                print("Company is blocked")
                 return Response({'error': 'Your company is blocked. Please contact support.'}, status=status.HTTP_403_FORBIDDEN)
-            if not company.check_password(password):
-                raise Company.DoesNotExist()
-
+            
+            print(f"Checking company password...")
+            password_check = company.check_password(password)
+            print(f"Company password check result: {password_check}")
+            
+            # If password check fails, try to detect if it's a plain text password
+            if not password_check:
+                print("Password check failed, checking if password is stored as plain text...")
+                
+                # Check if the stored password matches the input password directly (plain text)
+                if company.password == password:
+                    print("Password was stored as plain text! Fixing it now...")
+                    # Hash the password properly
+                    company.set_password(password)
+                    print("Password has been hashed and saved properly")
+                    
+                    # Now the password check should work
+                    password_check = company.check_password(password)
+                    print(f"Password check after fixing: {password_check}")
+                else:
+                    print("Password doesn't match plain text either")
+                
+                if not password_check:
+                    print("Company password check failed even after plain text fix")
+                    raise Company.DoesNotExist()
+            
+            print("Company login successful, generating tokens...")
             refresh = RefreshToken()
             access_token = refresh.access_token
             access_token['user_id'] = company.user_id
             access_token['role'] = 'company'
-
+            
             refresh['user_id'] = company.user_id
             refresh['role'] = 'company'
-
-            return Response({
+            
+            response_data = {
                 'id': company.id,
                 'user_id': company.user_id,
                 'company_name': company.company_name,
@@ -99,12 +151,16 @@ class CompanyLoginView(APIView):
                 'role': 'company',
                 'access': str(access_token),
                 'refresh': str(refresh),
-            }, status=status.HTTP_200_OK)
-
+            }
+            print("Company login response:", response_data)
+            return Response(response_data, status=status.HTTP_200_OK)
+            
         except Company.DoesNotExist:
+            print("Company not found or password incorrect")
+            print("=== LOGIN FAILED ===")
             return Response({'error': 'Invalid username or password'}, status=status.HTTP_401_UNAUTHORIZED)
 
-
+ 
 
 
 
@@ -251,27 +307,168 @@ class BuildingCreateView(APIView):
 
         print("Serializer errors:", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    
+# class BuildingDetailView(APIView):
+#     def get_object(self, pk):
+#         try:
+#             return Building.objects.get(pk=pk)
+#         except Building.DoesNotExist:
+#             return None
+
+#     def get(self, request, pk):
+#         building = self.get_object(pk)
+#         if not building:
+#             return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+#         serializer = BuildingSerializer(building)
+#         unit_count = building.unit_building.count()  
+
+#         data = serializer.data
+#         data['unit_count'] = unit_count   
+
+#         return Response(data)
+
+#     def put(self, request, pk):
+#         building = self.get_object(pk)
+#         if not building:
+#             return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+#         print("Request data:", request.data)
+        
+     
+#         def get_value_or_none(key, convert_type=None):
+#             value = request.data.get(key, '')
+#             if value == '' or value is None:
+#                 return None
+#             if convert_type:
+#                 try:
+#                     return convert_type(value)
+#                 except (ValueError, TypeError):
+#                     return None
+#             return value
+        
+      
+#         building_data = {
+#             'company': request.data.get('company'),
+#             'building_name': request.data.get('building_name'),
+#             'building_no': request.data.get('building_no'),
+#             'plot_no': request.data.get('plot_no'),
+#             'description': get_value_or_none('description'),
+#             'remarks': get_value_or_none('remarks'),
+#             'latitude': get_value_or_none('latitude', float),
+#             'longitude': get_value_or_none('longitude', float),
+#             'status': get_value_or_none('status') or building.status,
+
+#             'land_mark': get_value_or_none('land_mark'),
+#             'building_address': get_value_or_none('building_address'),
+#         }
+        
+     
+#         documents_data = []
+#         documents_provided = False   
+        
+        
+#         if 'build_comp' in request.data:
+#             documents_provided = True
+            
+   
+#             if isinstance(request.data['build_comp'], list):
+#                 documents_data = request.data['build_comp']
+#             else:
+ 
+#                 document_groups = defaultdict(dict)
+                
+#                 for key, value in request.data.items():
+#                     if key.startswith('build_comp['):
+#                         match = re.match(r'build_comp\[(\d+)\]\[(\w+)\]', key)
+#                         if match:
+#                             index = int(match.group(1))
+#                             field_name = match.group(2)
+#                             document_groups[index][field_name] = value
+                
+#                 for index in sorted(document_groups.keys()):
+#                     doc_data = document_groups[index]
+                  
+#                     if any(key in doc_data for key in ['doc_type', 'number', 'issued_date', 'expiry_date', 'upload_file']):
+              
+#                         if 'id' in doc_data and doc_data['id']:
+#                             try:
+#                                 doc_data['id'] = int(doc_data['id'])
+#                             except (ValueError, TypeError):
+#                                 doc_data.pop('id')  
+#                         documents_data.append(doc_data)
+        
+  
+#         elif any(key.startswith('build_comp[') for key in request.data.keys()):
+#             documents_provided = True
+        
+#             document_groups = defaultdict(dict)
+            
+#             for key, value in request.data.items():
+#                 if key.startswith('build_comp['):
+#                     match = re.match(r'build_comp\[(\d+)\]\[(\w+)\]', key)
+#                     if match:
+#                         index = int(match.group(1))
+#                         field_name = match.group(2)
+#                         document_groups[index][field_name] = value
+            
+#             for index in sorted(document_groups.keys()):
+#                 doc_data = document_groups[index]
+               
+#                 if any(key in doc_data for key in ['doc_type', 'number', 'issued_date', 'expiry_date', 'upload_file']):
+          
+#                     if 'id' in doc_data and doc_data['id']:
+#                         try:
+#                             doc_data['id'] = int(doc_data['id'])
+#                         except (ValueError, TypeError):
+#                             doc_data.pop('id')   
+#                     documents_data.append(doc_data)
+        
+       
+#         final_data = building_data.copy()
+        
+      
+#         if documents_provided:
+#             final_data['build_comp'] = documents_data
+#             print("Documents data included:", documents_data)
+#         else:
+#             print("No document data provided - preserving existing documents")
+        
+#         print("Processed data:", final_data)
+        
+   
+#         serializer = BuildingSerializer(building, data=final_data, partial=True)
+#         if serializer.is_valid():
+#             serializer.save()
+#             return Response(serializer.data)
+        
+#         print("Serializer errors:", serializer.errors)
+#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+#     def delete(self, request, pk):
+#         building = self.get_object(pk)
+#         if not building:
+#             return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
+#         building.delete()
+#         return Response({'message': 'Building deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
 class BuildingDetailView(APIView):
     def get_object(self, pk):
         try:
             return Building.objects.get(pk=pk)
         except Building.DoesNotExist:
             return None
-
     def get(self, request, pk):
         building = self.get_object(pk)
         if not building:
             return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
         serializer = BuildingSerializer(building)
         return Response(serializer.data)
-
     def put(self, request, pk):
         building = self.get_object(pk)
         if not building:
             return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
-        
-        print("Request data:", request.data)
-        
         # Helper function to handle empty values
         def get_value_or_none(key, convert_type=None):
             value = request.data.get(key, '')
@@ -283,7 +480,6 @@ class BuildingDetailView(APIView):
                 except (ValueError, TypeError):
                     return None
             return value
-        
         # Process building data
         building_data = {
             'company': request.data.get('company'),
@@ -298,22 +494,17 @@ class BuildingDetailView(APIView):
             'land_mark': get_value_or_none('land_mark'),
             'building_address': request.data.get('building_address'),
         }
-        
-        # Process document data - handle both JSON array and form-data formats
+        # Process document data
         documents_data = []
-        documents_provided = False  # Flag to check if documents were explicitly provided
-        
-        # Check if build_comp is explicitly provided in the request
+        document_files = []
+        # Handle both form-data and JSON formats
         if 'build_comp' in request.data:
-            documents_provided = True
-            
-            # Check if build_comp is already a list (JSON format)
+            # JSON format
             if isinstance(request.data['build_comp'], list):
                 documents_data = request.data['build_comp']
             else:
-                # Handle form-data format
+                # Form-data format
                 document_groups = defaultdict(dict)
-                
                 for key, value in request.data.items():
                     if key.startswith('build_comp['):
                         match = re.match(r'build_comp\[(\d+)\]\[(\w+)\]', key)
@@ -321,88 +512,70 @@ class BuildingDetailView(APIView):
                             index = int(match.group(1))
                             field_name = match.group(2)
                             document_groups[index][field_name] = value
-                
                 for index in sorted(document_groups.keys()):
-                    doc_data = document_groups[index]
-                    # Add document if it has any meaningful data (not just upload_file)
-                    if any(key in doc_data for key in ['doc_type', 'number', 'issued_date', 'expiry_date', 'upload_file']):
-                        # Convert id to integer if present
-                        if 'id' in doc_data and doc_data['id']:
-                            try:
-                                doc_data['id'] = int(doc_data['id'])
-                            except (ValueError, TypeError):
-                                doc_data.pop('id')  # Remove invalid ID
-                        documents_data.append(doc_data)
-        
-        # Check if any build_comp fields are present in form data
-        elif any(key.startswith('build_comp[') for key in request.data.keys()):
-            documents_provided = True
-            # Handle form-data format when build_comp key itself is not present
-            document_groups = defaultdict(dict)
-            
-            for key, value in request.data.items():
-                if key.startswith('build_comp['):
-                    match = re.match(r'build_comp\[(\d+)\]\[(\w+)\]', key)
-                    if match:
-                        index = int(match.group(1))
-                        field_name = match.group(2)
-                        document_groups[index][field_name] = value
-            
-            for index in sorted(document_groups.keys()):
-                doc_data = document_groups[index]
-                # Add document if it has any meaningful data (not just upload_file)
-                if any(key in doc_data for key in ['doc_type', 'number', 'issued_date', 'expiry_date', 'upload_file']):
-                    # Convert id to integer if present
-                    if 'id' in doc_data and doc_data['id']:
-                        try:
-                            doc_data['id'] = int(doc_data['id'])
-                        except (ValueError, TypeError):
-                            doc_data.pop('id')  # Remove invalid ID
-                    documents_data.append(doc_data)
-        
-        # Prepare final data
-        final_data = building_data.copy()
-        
-        # Only include build_comp in the data if it was explicitly provided
-        if documents_provided:
-            final_data['build_comp'] = documents_data
-            print("Documents data included:", documents_data)
-        else:
-            print("No document data provided - preserving existing documents")
-        
-        print("Processed data:", final_data)
-        
-        # Use partial=True to allow partial updates
-        serializer = BuildingSerializer(building, data=final_data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        
-        print("Serializer errors:", serializer.errors)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+                    documents_data.append(document_groups[index])
+        # Handle file uploads separately
+        for file_key, file_obj in request.FILES.items():
+            if file_key.startswith('build_comp['):
+                match = re.match(r'build_comp\[(\d+)\]\[upload_file\]', file_key)
+                if match:
+                    index = int(match.group(1))
+                    if index < len(documents_data):
+                        documents_data[index]['upload_file'] = file_obj
+        try:
+            with transaction.atomic():
+                # Update building data
+                building_serializer = BuildingSerializer(building, data=building_data, partial=True)
+                if not building_serializer.is_valid():
+                    return Response(building_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                updated_building = building_serializer.save()
+                # Handle documents
+                if documents_data:
+                    # First delete existing documents if we're replacing them
+                    DocumentType.objects.filter(building=updated_building).delete()
+                    # Create new documents
+                    for doc_data in documents_data:
+                        doc_serializer = DocumentTypeSerializer(data={
+                            'building': updated_building.id,
+                            'doc_type': doc_data.get('doc_type'),
+                            'number': doc_data.get('number'),
+                            'issued_date': doc_data.get('issued_date'),
+                            'expiry_date': doc_data.get('expiry_date'),
+                            'upload_file': doc_data.get('upload_file'),
+                        })
+                        if not doc_serializer.is_valid():
+                            return Response(doc_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                        doc_serializer.save()
+                return Response(building_serializer.data)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     def delete(self, request, pk):
         building = self.get_object(pk)
         if not building:
             return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
         building.delete()
         return Response({'message': 'Building deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
-    
+
 class BuildingByCompanyView(APIView):
     def get(self, request, company_id):
         buildings = Building.objects.filter(company__id=company_id)
         serializer = BuildingSerializer(buildings, many=True)
-        return Response(serializer.data)
+        data = serializer.data
+
+  
+        for i, building in enumerate(buildings):
+            data[i]['unit_count'] = building.unit_building.count()
+
+        return Response(data)
 
 
 
-import json
 
 class UnitCreateView(APIView):
     def post(self, request):
         print("Raw request data:", request.data)
         
-        # Extract basic unit data
+   
         unit_data = {}
         for key, value in request.data.items():
             if key not in ['unit_comp_json'] and not key.startswith('document_file_'):
@@ -463,118 +636,65 @@ class UnitsByCompanyView(APIView):
         serializer = UnitGetSerializer(units, many=True)
         return Response(serializer.data)
     
-    
  
+
 class UnitEditView(APIView):
     def put(self, request, pk):
-        """
-        Update an existing unit with JSON import functionality
-        """
         print("Raw request data:", request.data)
-        
-        # Get the unit instance to update
+        print("Files keys received:", request.FILES.keys())
+
         try:
             unit = Units.objects.get(pk=pk)
         except Units.DoesNotExist:
-            return Response(
-                {'error': 'Unit not found'}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({'error': 'Unit not found'}, status=status.HTTP_404_NOT_FOUND)
+
+     
+        if 'upload_file' in request.FILES:
+            uploaded_file = request.FILES['upload_file']
+            print(f"Processing file: {uploaded_file.name}")
+            
+            
+            existing_doc = unit.unit_comp.first()  
+            
+            if existing_doc:
+       
+                existing_doc.upload_file = uploaded_file
+                existing_doc.save()
+                print(f"Updated existing document {existing_doc.id} with file: {existing_doc.upload_file}")
+            else:
         
-        # Extract basic unit data
+                new_doc = UnitDocumentType.objects.create(
+                    unit=unit,
+                    upload_file=uploaded_file,
+                    number='AUTO-' + str(unit.id),
+                    doc_type_id=1   
+                )
+                print(f"Created new document {new_doc.id} with file: {new_doc.upload_file}")
+
+     
         unit_data = {}
         for key, value in request.data.items():
-            if key not in ['unit_comp_json'] and not key.startswith('document_file_'):
+            if key not in ['upload_file', 'unit_comp_json'] and not key.startswith('document_file_'):
                 unit_data[key] = value
+
+   
+        if unit_data:
+            serializer = UnitSerializer(unit, data=unit_data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                print("Unit data updated successfully")
+            else:
+                print("Serializer errors:", serializer.errors)
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+     
+        response_serializer = UnitSerializer(unit)
+        print("Final response:", response_serializer.data)
         
-        # Process unit_comp_json if provided
-        unit_comp_json = request.data.get('unit_comp_json')
-        if unit_comp_json:
-            try:
-                unit_comp_data = json.loads(unit_comp_json)
-                
-                # Process file uploads for documents
-                for doc_data in unit_comp_data:
-                    file_index = doc_data.pop('file_index', None)
-                    if file_index is not None:
-                        file_key = f'document_file_{file_index}'
-                        if file_key in request.FILES:
-                            doc_data['upload_file'] = request.FILES[file_key]
-                
-                unit_data['unit_comp'] = unit_comp_data
-                
-            except json.JSONDecodeError:
-                return Response(
-                    {'error': 'Invalid JSON in unit_comp_json'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        
-        print("Processed unit data:", unit_data)
-        
-        # Use serializer to update the unit
-        serializer = UnitSerializer(unit, data=unit_data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            print("Successfully updated unit:", serializer.data)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        else:
-            print("Serializer errors:", serializer.errors)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    def patch(self, request, pk):
-        """
-        Partially update an existing unit with JSON import functionality
-        """
-        print("Raw request data:", request.data)
-        
-        # Get the unit instance to update
-        try:
-            unit = Units.objects.get(pk=pk)
-        except Units.DoesNotExist:
-            return Response(
-                {'error': 'Unit not found'}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Extract basic unit data
-        unit_data = {}
-        for key, value in request.data.items():
-            if key not in ['unit_comp_json'] and not key.startswith('document_file_'):
-                unit_data[key] = value
-        
-        # Process unit_comp_json if provided
-        unit_comp_json = request.data.get('unit_comp_json')
-        if unit_comp_json:
-            try:
-                unit_comp_data = json.loads(unit_comp_json)
-                
-                # Process file uploads for documents
-                for doc_data in unit_comp_data:
-                    file_index = doc_data.pop('file_index', None)
-                    if file_index is not None:
-                        file_key = f'document_file_{file_index}'
-                        if file_key in request.FILES:
-                            doc_data['upload_file'] = request.FILES[file_key]
-                
-                unit_data['unit_comp'] = unit_comp_data
-                
-            except json.JSONDecodeError:
-                return Response(
-                    {'error': 'Invalid JSON in unit_comp_json'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        
-        print("Processed unit data:", unit_data)
-        
-        # Use serializer to partially update the unit
-        serializer = UnitSerializer(unit, data=unit_data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            print("Successfully updated unit:", serializer.data)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        else:
-            print("Serializer errors:", serializer.errors)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+
+ 
     
     def get(self, request, pk):
         """
@@ -792,6 +912,8 @@ class TenantCreateView(APIView):
 
     
 class TenantDetailView(APIView):
+    
+
     def get_object(self, pk):
         try:
             return Tenant.objects.get(pk=pk)
@@ -799,17 +921,40 @@ class TenantDetailView(APIView):
             return None
 
     def get(self, request, pk):
-        building = self.get_object(pk)
-        if not building:
-            return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
-        serializer = TenantGetSerializer(building)
+        tenant = self.get_object(pk)
+        if not tenant:
+            return Response({'error': 'Tenant not found'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = TenantGetSerializer(tenant)
         return Response(serializer.data)
 
     def put(self, request, pk):
-        building = self.get_object(pk)
-        if not building:
-            return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
-        serializer = TenantSerializer(building, data=request.data)
+        tenant = self.get_object(pk)
+        if not tenant:
+            return Response({'error': 'Tenant not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        tenant_data = {}
+        for key, value in request.data.items():
+            if key != 'tenant_comp_json' and not key.startswith('document_file_'):
+                tenant_data[key] = value
+
+        tenant_comp_json = request.data.get('tenant_comp_json')
+        if tenant_comp_json:
+            try:
+                tenant_comp_data = json.loads(tenant_comp_json)
+
+                for doc_data in tenant_comp_data:
+                    file_index = doc_data.pop('file_index', None)
+                    if file_index is not None:
+                        file_key = f'document_file_{file_index}'
+                        if file_key in request.FILES:
+                            doc_data['upload_file'] = request.FILES[file_key]
+              
+                tenant_data['tenant_comp'] = tenant_comp_data
+
+            except json.JSONDecodeError:
+                return Response({'error': 'Invalid JSON in tenant_comp_json'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = TenantSerializer(tenant, data=tenant_data, partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
@@ -912,13 +1057,14 @@ class TenancyCreateView(APIView):
     """Create a new tenancy with automatic payment schedule generation"""
     
     def post(self, request):
+        print("rrrrr",request.data)
         serializer = TenancyCreateSerializer(data=request.data)
         
         if serializer.is_valid():
-            # Create tenancy with payment schedules
+       
             tenancy = serializer.save()
             
-            # Return detailed response with payment schedules
+
             detail_serializer = TenancyDetailSerializer(tenancy)
             
             return Response({
@@ -953,29 +1099,14 @@ class TenancyDetailView(APIView):
                 'message': 'Tenancy not found'
             }, status=status.HTTP_404_NOT_FOUND)
             
-    def put(self, request, pk):
-        try:
-            tenancy = Tenancy.objects.get(pk=pk)
-        except Tenancy.DoesNotExist:
-            return Response({
-                'success': False,
-                'message': 'Tenancy not found'
-            }, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = TenancyCreateSerializer(tenancy, data=request.data)
+    def put(self, request, pk, format=None):
+        tenancy = get_object_or_404(Tenancy, pk=pk)
+        serializer = TenancyCreateSerializer(tenancy, data=request.data, partial=False)  
         if serializer.is_valid():
             serializer.save()
-            return Response({
-                'success': True,
-                'message': 'Tenancy updated successfully',
-                'tenancy': serializer.data
-            }, status=status.HTTP_200_OK)
-        
-        return Response({
-            'success': False,
-            'message': 'Validation failed',
-            'errors': serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     def delete(self, request, pk):
         try:
@@ -1029,22 +1160,134 @@ class CloseTenanciesByCompanyAPIView(APIView):
 
 
  
+class VacantUnitsByBuildingView(APIView):
+    def get(self, request, building_id):
+        try:
+            building = Building.objects.get(id=building_id)
+        except Building.DoesNotExist:
+            return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        vacant_units = Units.objects.filter(building=building, unit_status='vacant')
+        serializer = UnitSerializer(vacant_units, many=True)
+        return Response(serializer.data)
 
-class UnitsByCompanyAPIView(APIView):
+
+class BuildingsWithVacantUnitsView(APIView):
     def get(self, request, company_id):
- 
-        units = Units.objects.filter(company_id=company_id)
- 
-        building_data = []
-        buildings = units.values_list('building', flat=True).distinct()
-        for building_id in buildings:
-            building_units = units.filter(building_id=building_id)
-            building_name = Building.objects.get(id=building_id).building_name if building_id else "No Building Assigned"
-            serialized_units = UnitSerializer(building_units, many=True).data
-            building_data.append({
-                "building_id": building_id,
-                "building_name": building_name,
-                "units": serialized_units
-            })
+        buildings = Building.objects.filter(
+            company_id=company_id,
+            unit_building__unit_status='vacant'
+        ).distinct()
+        serializer = BuildingSerializer(buildings, many=True)
+        return Response(serializer.data)
+    
+    
+class ConfirmTenancyView(APIView):
+    def post(self, request, pk):
+        tenancy = get_object_or_404(Tenancy, pk=pk)
 
-        return Response(building_data, status=status.HTTP_200_OK)
+        if tenancy.status == 'active':
+            return Response({'detail': 'Tenancy is already active.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        unit = tenancy.unit
+        if not unit:
+            return Response({'detail': 'Tenancy has no unit assigned.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        tenancy.status = 'active'
+        tenancy.save()
+
+        unit.unit_status = 'occupied'
+
+        unit.save()
+
+        return Response({'detail': 'Tenancy confirmed and unit status set to occupied.'}, status=status.HTTP_200_OK)
+    
+    
+
+class OccupiedUnitsByBuildingView(APIView):
+    def get(self, request, building_id):
+        try:
+            building = Building.objects.get(id=building_id)
+        except Building.DoesNotExist:
+            return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        vacant_units = Units.objects.filter(building=building, unit_status='occupied')
+        serializer = UnitSerializer(vacant_units, many=True)
+        return Response(serializer.data)
+
+
+class BuildingsWithOccupiedUnitsView(APIView):
+    def get(self, request, company_id):
+        buildings = Building.objects.filter(
+            company_id=company_id,
+            unit_building__unit_status='occupied'
+        ).distinct()
+        serializer = BuildingSerializer(buildings, many=True)
+        return Response(serializer.data)
+ 
+ 
+class TenancyRenewalView(APIView):
+    """Renew an existing tenancy"""
+    
+    def post(self, request, tenancy_id):
+ 
+        original_tenancy = get_object_or_404(Tenancy, id=tenancy_id)
+        
+         
+        if original_tenancy.status not in ['active', 'terminated']:
+            return Response({
+                'success': False,
+                'message': 'Only active or terminated tenancies can be renewed'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        
+        if Tenancy.objects.filter(previous_tenancy=original_tenancy).exists():
+            return Response({
+                'success': False,
+                'message': 'This tenancy has already been renewed'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        print("Renewal request data:", request.data)
+        
+    
+        serializer = TenancyRenewalSerializer(
+            data=request.data,
+            context={'original_tenancy_id': tenancy_id}
+        )
+        
+        if serializer.is_valid():
+            try:
+                renewed_tenancy = serializer.save()
+                
+    
+                detail_serializer = TenancyDetailSerializer(renewed_tenancy)
+                
+                return Response({
+                    'success': True,
+                    'message': 'Tenancy renewed successfully',
+                    'original_tenancy_id': original_tenancy.id,
+                    'renewed_tenancy': detail_serializer.data,
+                    'renewal_number': renewed_tenancy.get_renewal_number()
+                }, status=status.HTTP_201_CREATED)
+                
+            except Exception as e:
+                return Response({
+                    'success': False,
+                    'message': f'Error renewing tenancy: {str(e)}'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        return Response({
+            'success': False,
+            'message': 'Validation failed',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+        
+        
+class UserDetailView(APIView):
+    def get(self, request, user_id):
+        try:
+            user = Users.objects.get(id=user_id)
+            serializer = UserSerializer(user)
+            return Response(serializer.data)
+        except Users.DoesNotExist:
+            return Response({'error': 'User not found'}, status=404)

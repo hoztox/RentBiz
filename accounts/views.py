@@ -114,3 +114,41 @@ class StateListView(APIView):
                 {"error": "Country not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
+class CompanyDetailView(APIView):
+    def get(self, request, company_id):
+        try:
+            company = Company.objects.get(id=company_id)
+            serializer = CompanySerializer(company)
+            return Response(serializer.data)
+        except Company.DoesNotExist:
+            return Response({'error': 'Company not found'}, status=404)
+
+
+class CompanyDetailView(APIView):
+    def get(self, request, company_id):
+        try:
+            company = Company.objects.get(id=company_id)
+            serializer = CompanySerializer(company)
+            return Response(serializer.data)
+        except Company.DoesNotExist:
+            return Response({'error': 'Company not found'}, status=404)
+
+class CountryListView(APIView):
+    def get(self, request, country_id=None):
+
+            countries = Country.objects.all()
+            serializer = CountrySerializer(countries, many=True)
+            return Response(serializer.data)
+
+
+class StateListView(APIView):
+    def get(self, request, country_id):
+        try:
+            states = State.objects.filter(country_id=country_id)
+            serializer = StateSerializer(states, many=True)
+            return Response(serializer.data)
+        except Country.DoesNotExist:
+            return Response(
+                {"error": "Country not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )

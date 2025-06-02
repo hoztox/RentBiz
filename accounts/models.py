@@ -107,4 +107,4 @@ class Company(models.Model):
         return check_password(raw_password, self.password)
 
     def __str__(self):
-        return self.company_name
+        return str(self.company_name or "Unnamed Company")
