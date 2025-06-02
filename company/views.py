@@ -17,6 +17,7 @@ import re
 from rest_framework import status
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
+from collections import defaultdict
 from django.utils import timezone
 
 from rest_framework.views import APIView
@@ -186,12 +187,10 @@ class UserDetailAPIView(APIView):
         user.delete()
         return Response({"message": "User deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
 
-from collections import defaultdict
 class BuildingCreateView(APIView):
     def post(self, request, *args, **kwargs):
         print("Request data:", request.data)
-        
-  
+
         def get_value_or_none(key, convert_type=None):
             value = request.data.get(key, '')
             if value == '' or value is None:
@@ -202,61 +201,56 @@ class BuildingCreateView(APIView):
                 except (ValueError, TypeError):
                     return None
             return value
-        
-     
+
+        # Include country and state in building_data
         building_data = {
-            'company': request.data.get('company'),
-            'building_name': request.data.get('building_name'),
-            'building_no': request.data.get('building_no'),
-            'plot_no': request.data.get('plot_no'),
+            'company': get_value_or_none('company'),
+            'building_name': get_value_or_none('building_name'),
+            'building_no': get_value_or_none('building_no'),
+            'plot_no': get_value_or_none('plot_no'),
             'description': get_value_or_none('description'),
             'remarks': get_value_or_none('remarks'),
-            'latitude': get_value_or_none('latitude', float), 
-            'longitude': get_value_or_none('longitude', float),  
-            'status': request.data.get('status'),
+            'latitude': get_value_or_none('latitude', float),
+            'longitude': get_value_or_none('longitude', float),
+            'status': get_value_or_none('status'),
             'land_mark': get_value_or_none('land_mark'),
-            'building_address': request.data.get('building_address'),
+            'building_address': get_value_or_none('building_address'),
+            'country': get_value_or_none('country', int),  # Convert to int for ForeignKey
+            'state': get_value_or_none('state', int),      # Convert to int for ForeignKey
+            'user': get_value_or_none('user'),            # Include user if sent
         }
-        
-  
+
+        # Process documents
         documents_data = []
         document_groups = defaultdict(dict)
-        
-       
+
         for key, value in request.data.items():
             if key.startswith('build_comp['):
-               
-                import re
                 match = re.match(r'build_comp\[(\d+)\]\[(\w+)\]', key)
                 if match:
                     index = int(match.group(1))
                     field_name = match.group(2)
                     document_groups[index][field_name] = value
-        
-      
+
         for index in sorted(document_groups.keys()):
             doc_data = document_groups[index]
-       
             if 'upload_file' in doc_data:
-         
                 documents_data.append(doc_data)
-        
-   
+
+        # Combine building and documents data
         final_data = building_data.copy()
         final_data['build_comp'] = documents_data
-        
+
         print("Processed data:", final_data)
-        
-        
+
+        # Serialize and save
         serializer = BuildingSerializer(data=final_data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
-        
+
         print("Serializer errors:", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    
 class BuildingDetailView(APIView):
     def get_object(self, pk):
         try:
