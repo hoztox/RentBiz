@@ -459,12 +459,14 @@ class BuildingDetailView(APIView):
             return Building.objects.get(pk=pk)
         except Building.DoesNotExist:
             return None
+
     def get(self, request, pk):
         building = self.get_object(pk)
         if not building:
             return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
         serializer = BuildingSerializer(building)
         return Response(serializer.data)
+
     def put(self, request, pk):
         building = self.get_object(pk)
         if not building:
@@ -493,6 +495,8 @@ class BuildingDetailView(APIView):
             'status': request.data.get('status'),
             'land_mark': get_value_or_none('land_mark'),
             'building_address': request.data.get('building_address'),
+            'country': request.data.get('country',int),
+            'state': request.data.get('state',int),
         }
         # Process document data
         documents_data = []
@@ -549,12 +553,14 @@ class BuildingDetailView(APIView):
                 return Response(building_serializer.data)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
     def delete(self, request, pk):
         building = self.get_object(pk)
         if not building:
             return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
         building.delete()
         return Response({'message': 'Building deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
 
 class BuildingByCompanyView(APIView):
     def get(self, request, company_id):
