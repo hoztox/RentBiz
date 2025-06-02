@@ -66,6 +66,10 @@ class Building(models.Model):
     land_mark = models.CharField(max_length=255,null=True, blank=True)    
     building_address = models.CharField(max_length=255,null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    
+    country = models.ForeignKey(Country, on_delete=models.SET_NULL, null=True, blank=True, related_name='buildings_country')
+    state = models.ForeignKey(State, on_delete=models.SET_NULL, null=True, blank=True, related_name='buildings_state')
+
     STATUS_CHOICES = [
         ('active', 'Active'),
         ('inactive', 'Inactive')
@@ -90,6 +94,7 @@ class Building(models.Model):
             self.code = f"B{new_num:08d}"  
         
         super().save(*args, **kwargs)
+        
     
 class DocumentType(models.Model):  
     building = models.ForeignKey(Building, on_delete=models.CASCADE, related_name='build_comp', null=True, blank=True) 
@@ -166,7 +171,7 @@ class UnitDocumentType(models.Model):
       return self.unit.unit_name if self.unit and self.unit.unit_name else "Untitled Unit"
 
 
-
+    
 class IDType(models.Model):
     user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='id_comp', null=True, blank=True) 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='id_comp', null=True, blank=True) 
