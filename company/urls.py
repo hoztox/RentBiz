@@ -81,7 +81,9 @@ urlpatterns = [
     path('tenancy/<int:tenancy_id>/renew/', TenancyRenewalView.as_view(), name='tenancy-renew'),
     
     
-   
+    #Taxes
+    path('taxes/<int:company_id>/<int:tax_id>/', TaxesAPIView.as_view(), name='taxes'),
+    path('taxes/<int:company_id>/', TaxesAPIView.as_view(), name='taxes'),
     
 ]
 
