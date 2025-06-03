@@ -22,9 +22,9 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from collections import defaultdict
 from django.utils import timezone
 import json
- 
+from datetime import date
 
- 
+
  
 class CompanyLoginView(APIView):
     def post(self, request, *args, **kwargs):
@@ -1297,3 +1297,204 @@ class UserDetailView(APIView):
             return Response(serializer.data)
         except Users.DoesNotExist:
             return Response({'error': 'User not found'}, status=404)
+
+
+
+class TaxesAPIView(APIView):
+    """
+    Enhanced API View with tax versioning support
+    """
+
+    def get(self, request, company_id, tax_id=None):
+        """
+        Enhanced GET method with optional query parameters:
+        - ?history=true : Get complete tax history
+        - ?active_only=true : Get only active taxes
+        - ?effective_date=YYYY-MM-DD : Get taxes effective on specific date
+        """
+        try:
+            company = Company.objects.get(id=company_id)
+        except Company.DoesNotExist:
+            return Response(
+                {"detail": "Company not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Handle single tax record request
+        if tax_id:
+            try:
+                tax = Taxes.objects.get(id=tax_id, company=company)
+                serializer = TaxesSerializer(tax)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            except Taxes.DoesNotExist:
+                return Response(
+                    {"detail": "Tax record not found."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+        # Handle query parameters
+        show_history = request.query_params.get('history', 'false').lower() == 'true'
+        active_only = request.query_params.get('active_only', 'false').lower() == 'true'
+        effective_date_str = request.query_params.get('effective_date')
+        
+        # Base queryset
+        taxes = Taxes.objects.filter(company=company)
+        
+        if effective_date_str:
+            try:
+                effective_date = date.fromisoformat(effective_date_str)
+                taxes = taxes.filter(
+                    applicable_from__lte=effective_date
+                ).filter(
+                    models.Q(applicable_to__isnull=True) | models.Q(applicable_to__gte=effective_date)
+                )
+            except ValueError:
+                return Response(
+                    {"detail": "Invalid date format. Use YYYY-MM-DD."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        elif active_only:
+            taxes = taxes.filter(is_active=True)
+        elif not show_history:
+            # Default: show only current active taxes
+            taxes = taxes.filter(is_active=True)
+
+        serializer = TaxesSerializer(taxes, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request, company_id):
+        """
+        POST method that handles tax versioning automatically
+        """
+        try:
+            company = Company.objects.get(id=company_id)
+        except Company.DoesNotExist:
+            return Response(
+                {"detail": "Company not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        serializer = TaxesSerializer(data=request.data)
+        if serializer.is_valid():
+            tax_type = serializer.validated_data['tax_type']
+            applicable_from = serializer.validated_data.get('applicable_from', date.today())
+            
+            # Check if there's an existing active tax of the same type
+            existing_tax = Taxes.objects.filter(
+                company=company,
+                tax_type=tax_type,
+                is_active=True,
+                applicable_to__isnull=True
+            ).first()
+            
+            if existing_tax:
+                # Close the existing tax period
+                end_date = applicable_from - timedelta(days=1)
+                existing_tax.close_tax_period(end_date)
+                
+                # Link the new tax to the old one
+                new_tax = serializer.save(
+                    company=company,
+                    applicable_from=applicable_from,
+                    superseded_by=None
+                )
+                existing_tax.superseded_by = new_tax
+                existing_tax.save()
+            else:
+                # No existing tax, create new one normally
+                new_tax = serializer.save(
+                    company=company,
+                    applicable_from=applicable_from
+                )
+            
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def put(self, request, company_id, tax_id):
+        """
+        Enhanced PUT method - creates new version only if tax_percentage, applicable_from, or applicable_to changes,
+        otherwise updates the existing record
+        """
+        try:
+            company = Company.objects.get(id=company_id)
+        except Company.DoesNotExist:
+            return Response(
+                {"detail": "Company not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        try:
+            existing_tax = Taxes.objects.get(id=tax_id, company=company)
+        except Taxes.DoesNotExist:
+            return Response(
+                {"detail": "Tax record not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Validate incoming data
+        serializer = TaxesSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        validated_data = serializer.validated_data
+        applicable_from = validated_data.get('applicable_from', date.today())
+        if isinstance(applicable_from, str):
+            applicable_from = date.fromisoformat(applicable_from)
+
+        # Check if critical fields have changed
+        critical_fields_changed = (
+            validated_data.get('tax_percentage') != existing_tax.tax_percentage or
+            validated_data.get('applicable_from') != existing_tax.applicable_from or
+            validated_data.get('applicable_to') != existing_tax.applicable_to
+        )
+
+        if critical_fields_changed:
+            # Create new version
+            end_date = applicable_from - timedelta(days=1)
+            existing_tax.close_tax_period(end_date)
+            
+            new_tax = serializer.save(
+                company=company,
+                applicable_from=applicable_from
+            )
+            
+            # Link old tax to new one
+            existing_tax.superseded_by = new_tax
+            existing_tax.save()
+            
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        else:
+            # Update existing record (non-critical fields like tax_type, country, state)
+            serializer = TaxesSerializer(existing_tax, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class TaxCalculationHelper:
+    """Helper class for tax calculations with historical support"""
+    
+    @staticmethod
+    def calculate_tax(company, tax_type, amount, calculation_date=None):
+        """Calculate tax amount for a specific date"""
+        if calculation_date is None:
+            calculation_date = date.today()
+            
+        tax_record = Taxes.get_active_tax(company, tax_type, calculation_date)
+        if not tax_record:
+            return 0, None
+            
+        tax_amount = (amount * tax_record.tax_percentage) / 100
+        return tax_amount, tax_record
+    
+    @staticmethod
+    def get_tax_changes(company, tax_type, from_date, to_date):
+        """Get all tax changes for a period"""
+        return Taxes.objects.filter(
+            company=company,
+            tax_type=tax_type,
+            applicable_from__gte=from_date,
+            applicable_from__lte=to_date
+        ).order_by('applicable_from')

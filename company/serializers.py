@@ -347,11 +347,6 @@ class ChargesGetSerializer(serializers.ModelSerializer):
         model = Charges
         fields = '__all__'
         
-        
-        
- 
-
- 
 
 class PaymentScheduleSerializer(serializers.ModelSerializer):
     charge_type_name = serializers.CharField(source='charge_type.name', read_only=True)
@@ -759,3 +754,18 @@ class TenancyRenewalSerializer(serializers.ModelSerializer):
 
         if payment_schedules:
             PaymentSchedule.objects.bulk_create(payment_schedules)
+
+
+class TaxesSerializer(serializers.ModelSerializer):
+    country_name = serializers.SerializerMethodField()
+    state_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Taxes
+        fields = '__all__'
+
+    def get_country_name(self, obj):
+        return obj.country.name if obj.country else None
+
+    def get_state_name(self, obj):
+        return obj.state.name if obj.state else None
