@@ -101,7 +101,7 @@ class Taxes(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='company_taxes', null=True, blank=True) 
     tax_type = models.CharField(max_length=100)  
     tax_percentage = models.DecimalField(max_digits=5, decimal_places=2)
-    country = models.ForeignKey(Country, on_delete=models.CASCADE, related_name='taxes_c')
+    country = models.ForeignKey(Country, on_delete=models.CASCADE, related_name='taxes_country', null=True, blank=True)
     state = models.ForeignKey(State, on_delete=models.CASCADE, related_name='taxes_state', null=True, blank=True)
     applicable_from = models.DateField(null=True, blank=True)
     applicable_to = models.DateField(null=True, blank=True)
@@ -340,7 +340,7 @@ class Charges(models.Model):
     name = models.CharField(max_length=100, null=True, blank=True)
     charge_code = models.ForeignKey(ChargeCode, on_delete=models.SET_NULL, null=True, blank=True, related_name='charge_code_comp') 
     vat_percentage = models.FloatField(null=True, blank=True) 
-    taxes = models.ManyToManyField(Taxes, related_name='charges_taxes', blank=True) 
+    taxes = models.ManyToManyField(Taxes, related_name='charges_taxes', blank=True,null=True) 
     created_at = models.DateTimeField(auto_now_add=True)
     
     def __str__(self):
