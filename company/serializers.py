@@ -104,10 +104,16 @@ class DocumentTypeSerializer(serializers.ModelSerializer):
         
 class BuildingSerializer(serializers.ModelSerializer):
     build_comp = DocumentTypeSerializer(many=True, required=False) 
+    unit_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Building
         fields = '__all__'  
+
+
+    def get_unit_count(self, obj):
+        return obj.unit_building.count()
+
 
     def create(self, validated_data):
         documents_data = validated_data.pop('build_comp', [])
