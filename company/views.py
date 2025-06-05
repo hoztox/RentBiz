@@ -8,6 +8,7 @@ from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from django.core.mail import EmailMultiAlternatives
 from django.conf import settings
+from django.db.models import Q
 import logging
 from django.shortcuts import get_object_or_404
 logger = logging.getLogger(__name__)
@@ -15,7 +16,6 @@ from datetime import datetime, timedelta
 import jwt
 import re
 from rest_framework import generics
-from collections import defaultdict
 from rest_framework import status
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -564,15 +564,26 @@ class BuildingDetailView(APIView):
 
 class BuildingByCompanyView(APIView):
     def get(self, request, company_id):
+        
+        search_query = request.query_params.get('search', '').strip()
+        status_filter = request.query_params.get('status', '').strip().lower()
         buildings = Building.objects.filter(company__id=company_id)
-        serializer = BuildingSerializer(buildings, many=True)
-        data = serializer.data
+        if search_query:
+            buildings = buildings.filter(
+                Q(building_name__icontains = search_query) |
+                Q(created_at__icontains = search_query)   |
+                Q(building_address__icontains = search_query)|
+                Q(code__icontains = search_query)
 
-  
-        for i, building in enumerate(buildings):
-            data[i]['unit_count'] = building.unit_building.count()
+            )
 
-        return Response(data)
+
+        if status_filter in ['active','inactive']:
+            buildings = buildings.filter(status=status_filter)
+            
+        return paginate_queryset(buildings, request, BuildingSerializer)
+        
+        
 
 
 
