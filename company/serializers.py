@@ -769,6 +769,10 @@ class TaxesSerializer(serializers.ModelSerializer):
     class Meta:
         model = Taxes
         fields = '__all__'
+        extra_kwargs = {
+            'is_active': {'required': False},
+            'applicable_to': {'required': False, 'allow_null': True}
+        }
 
     def get_country_name(self, obj):
         return obj.country.name if obj.country else None

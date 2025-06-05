@@ -1311,199 +1311,502 @@ class UserDetailView(APIView):
             return Response({'error': 'User not found'}, status=404)
 
 
-
 class TaxesAPIView(APIView):
     """
-    Enhanced API View with tax versioning support
+    API View for managing tax records with versioning support and robust error handling.
+    Supports CRUD operations for tax records associated with a specific company.
     """
 
     def get(self, request, company_id, tax_id=None):
         """
-        Enhanced GET method with optional query parameters:
-        - ?history=true : Get complete tax history
-        - ?active_only=true : Get only active taxes
-        - ?effective_date=YYYY-MM-DD : Get taxes effective on specific date
+        Retrieve a single tax record by tax_id or a list of tax records for a company.
+        
+        Args:
+            request: The HTTP request object containing query parameters.
+            company_id: The ID of the company whose tax records are being queried.
+            tax_id: Optional ID of a specific tax record to retrieve (default: None).
+
+        Returns:
+            Response: JSON response with tax data or error details.
         """
         try:
-            company = Company.objects.get(id=company_id)
-        except Company.DoesNotExist:
-            return Response(
-                {"detail": "Company not found."},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        # Handle single tax record request
-        if tax_id:
-            try:
-                tax = Taxes.objects.get(id=tax_id, company=company)
-                serializer = TaxesSerializer(tax)
-                return Response(serializer.data, status=status.HTTP_200_OK)
-            except Taxes.DoesNotExist:
+            # Input Validation
+            # Ensure company_id is a valid positive integer
+            if not company_id or not str(company_id).isdigit():
                 return Response(
-                    {"detail": "Tax record not found."},
+                    {"detail": "Invalid company ID provided."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Database Operations
+            # Fetch the company to ensure it exists
+            try:
+                company = Company.objects.get(id=company_id)
+            except Company.DoesNotExist:
+                return Response(
+                    {"detail": "Company not found."}, 
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-        # Handle query parameters
-        show_history = request.query_params.get('history', 'false').lower() == 'true'
-        active_only = request.query_params.get('active_only', 'false').lower() == 'true'
-        effective_date_str = request.query_params.get('effective_date')
-        
-        # Base queryset
-        taxes = Taxes.objects.filter(company=company)
-        
-        if effective_date_str:
-            try:
-                effective_date = date.fromisoformat(effective_date_str)
-                taxes = taxes.filter(
-                    applicable_from__lte=effective_date
-                ).filter(
-                    models.Q(applicable_to__isnull=True) | models.Q(applicable_to__gte=effective_date)
-                )
-            except ValueError:
-                return Response(
-                    {"detail": "Invalid date format. Use YYYY-MM-DD."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        elif active_only:
-            taxes = taxes.filter(is_active=True)
-        elif not show_history:
-            # Default: show only current active taxes
-            taxes = taxes.filter(is_active=True)
+            # Single Tax Retrieval
+            if tax_id:
+                # Validate tax_id is a positive integer
+                if not str(tax_id).isdigit():
+                    return Response(
+                        {"detail": "Invalid tax ID provided."}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                # Fetch and serialize the specific tax record
+                try:
+                    tax = Taxes.objects.get(id=tax_id, company=company)
+                    serializer = TaxesSerializer(tax)
+                    return Response(serializer.data, status=status.HTTP_200_OK)
+                except Taxes.DoesNotExist:
+                    return Response(
+                        {"detail": "Tax record not found."}, 
+                        status=status.HTTP_404_NOT_FOUND
+                    )
 
-        serializer = TaxesSerializer(taxes, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+            # Multiple Taxes Retrieval with Filtering
+            # Extract query parameters for filtering tax records
+            show_history = request.query_params.get('history', 'false').lower() == 'true'
+            active_only = request.query_params.get('active_only', 'false').lower() == 'true'
+            effective_date_str = request.query_params.get('effective_date')
+
+            # Base query for all tax records of the company
+            taxes = Taxes.objects.filter(company=company)
+
+            # Apply date-based filtering if effective_date is provided
+            if effective_date_str:
+                try:
+                    effective_date = date.fromisoformat(effective_date_str)
+                    # Filter taxes that were applicable on the given date
+                    taxes = taxes.filter(
+                        applicable_from__lte=effective_date
+                    ).filter(
+                        models.Q(applicable_to__isnull=True) | 
+                        models.Q(applicable_to__gte=effective_date)
+                    )
+                except ValueError:
+                    return Response(
+                        {"detail": "Invalid date format. Use YYYY-MM-DD."}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            # Filter active taxes only if history is not requested or active_only is true
+            elif active_only or not show_history:
+                taxes = taxes.filter(is_active=True)
+
+            # Serialize and return the filtered tax records
+            serializer = TaxesSerializer(taxes, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            # Log unexpected errors for debugging
+            logger.error(f"Unexpected error in GET taxes: {str(e)}")
+            return Response(
+                {"detail": "An unexpected error occurred while retrieving taxes."}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     def post(self, request, company_id):
         """
-        POST method that handles tax versioning automatically
+        Create a new tax record for a company, handling versioning for existing taxes.
+        
+        Args:
+            request: The HTTP request object containing tax data in JSON format.
+            company_id: The ID of the company to associate the new tax record with.
+
+        Returns:
+            Response: JSON response with the created tax data or error details.
         """
         try:
-            company = Company.objects.get(id=company_id)
-        except Company.DoesNotExist:
+            # Input Validation
+            # Ensure company_id is a valid positive integer
+            if not company_id or not str(company_id).isdigit():
+                return Response(
+                    {"detail": "Invalid company ID provided."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Database Operations
+            # Verify the company exists
+            try:
+                company = Company.objects.get(id=company_id)
+            except Company.DoesNotExist:
+                return Response(
+                    {"detail": "Company not found."}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Validate Request Data
+            # Ensure request body contains data
+            if not request.data:
+                return Response(
+                    {"detail": "Request data is required."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Serialize and validate the incoming tax data
+            serializer = TaxesSerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+            # Transaction Block
+            # Use atomic transaction to ensure database consistency
+            try:
+                with transaction.atomic():
+                    tax_type = serializer.validated_data['tax_type']
+                    applicable_from = serializer.validated_data.get('applicable_from', date.today())
+
+                    # Check for Existing Active Tax
+                    # Find any active tax of the same type with no end date
+                    existing_tax = Taxes.objects.filter(
+                        company=company,
+                        tax_type=tax_type,
+                        is_active=True,
+                        applicable_to__isnull=True
+                    ).first()
+
+                    if existing_tax:
+                        # Close the existing tax period
+                        end_date = applicable_from - timedelta(days=1)
+                        if end_date < existing_tax.applicable_from:
+                            return Response(
+                                {"detail": "New tax applicable_from date cannot be before existing tax start date."}, 
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+                        
+                        # Update the existing tax to set its end date and link to the new tax
+                        existing_tax.close_tax_period(end_date)
+
+                        # Create the new tax version
+                        new_tax = serializer.save(
+                            company=company,
+                            applicable_from=applicable_from,
+                            superseded_by=None
+                        )
+                        
+                        # Link the existing tax to the new one
+                        existing_tax.superseded_by = new_tax
+                        existing_tax.save()
+                    else:
+                        # Create a new tax record without versioning
+                        new_tax = serializer.save(
+                            company=company,
+                            applicable_from=applicable_from
+                        )
+
+                    # Return the serialized new tax record
+                    return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+            except IntegrityError as e:
+                # Handle database constraint violations
+                logger.error(f"Database integrity error in POST taxes: {str(e)}")
+                return Response(
+                    {"detail": "A database constraint was violated. Please check your data."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            except ValidationError as e:
+                # Handle validation errors from the model
+                logger.error(f"Validation error in POST taxes: {str(e)}")
+                return Response(
+                    {"detail": f"Validation error: {str(e)}"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        except Exception as e:
+            # Log unexpected errors for debugging
+            logger.error(f"Unexpected error in POST taxes: {str(e)}")
             return Response(
-                {"detail": "Company not found."},
-                status=status.HTTP_404_NOT_FOUND
+                {"detail": "An unexpected error occurred while creating the tax record."}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
-        serializer = TaxesSerializer(data=request.data)
-        if serializer.is_valid():
-            tax_type = serializer.validated_data['tax_type']
-            applicable_from = serializer.validated_data.get('applicable_from', date.today())
-            
-            # Check if there's an existing active tax of the same type
-            existing_tax = Taxes.objects.filter(
-                company=company,
-                tax_type=tax_type,
-                is_active=True,
-                applicable_to__isnull=True
-            ).first()
-            
-            if existing_tax:
-                # Close the existing tax period
-                end_date = applicable_from - timedelta(days=1)
-                existing_tax.close_tax_period(end_date)
-                
-                # Link the new tax to the old one
-                new_tax = serializer.save(
-                    company=company,
-                    applicable_from=applicable_from,
-                    superseded_by=None
-                )
-                existing_tax.superseded_by = new_tax
-                existing_tax.save()
-            else:
-                # No existing tax, create new one normally
-                new_tax = serializer.save(
-                    company=company,
-                    applicable_from=applicable_from
-                )
-            
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def put(self, request, company_id, tax_id):
         """
-        Enhanced PUT method - creates new version only if tax_percentage, applicable_from, or applicable_to changes,
-        otherwise updates the existing record
+        Update an existing tax record or create a new version if critical fields change.
+        
+        Args:
+            request: The HTTP request object containing updated tax data in JSON format.
+            company_id: The ID of the company associated with the tax record.
+            tax_id: The ID of the tax record to update.
+
+        Returns:
+            Response: JSON response with the updated or new tax data or error details.
         """
         try:
-            company = Company.objects.get(id=company_id)
-        except Company.DoesNotExist:
+            # Input Validation
+            # Ensure company_id and tax_id are valid positive integers
+            if not company_id or not str(company_id).isdigit():
+                return Response(
+                    {"detail": "Invalid company ID provided."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if not tax_id or not str(tax_id).isdigit():
+                return Response(
+                    {"detail": "Invalid tax ID provided."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Database Operations
+            # Verify the company exists
+            try:
+                company = Company.objects.get(id=company_id)
+            except Company.DoesNotExist:
+                return Response(
+                    {"detail": "Company not found."}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Fetch the existing tax record
+            try:
+                existing_tax = Taxes.objects.get(id=tax_id, company=company)
+            except Taxes.DoesNotExist:
+                return Response(
+                    {"detail": "Tax record not found."}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Validate Request Data
+            # Ensure request body contains data
+            if not request.data:
+                return Response(
+                    {"detail": "Request data is required."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Prepare Data for Update
+            # Create a mutable copy of request data, preserving existing values for unspecified fields
+            data = request.data.copy()
+            if 'is_active' not in data:
+                data['is_active'] = existing_tax.is_active
+            if 'applicable_to' not in data:
+                data['applicable_to'] = existing_tax.applicable_to
+            if 'applicable_from' not in data:
+                data['applicable_from'] = existing_tax.applicable_from
+
+            # Serialize and validate the updated data
+            serializer = TaxesSerializer(existing_tax, data=data, partial=True)
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+            # Transaction Block
+            # Use atomic transaction to ensure database consistency
+            try:
+                with transaction.atomic():
+                    validated_data = serializer.validated_data
+                    applicable_from = validated_data.get('applicable_from', existing_tax.applicable_from)
+                    
+                    # Handle string to date conversion for applicable_from
+                    if isinstance(applicable_from, str):
+                        try:
+                            applicable_from = date.fromisoformat(applicable_from)
+                        except ValueError:
+                            return Response(
+                                {"detail": "Invalid date format for applicable_from. Use YYYY-MM-DD."}, 
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+
+                    # Check for Critical Field Changes
+                    # Determine if tax_percentage, applicable_from, or applicable_to have changed
+                    critical_fields_changed = (
+                        validated_data.get('tax_percentage') != existing_tax.tax_percentage or
+                        validated_data.get('applicable_from') != existing_tax.applicable_from or
+                        validated_data.get('applicable_to') != existing_tax.applicable_to
+                    )
+
+                    if critical_fields_changed:
+                        # Validate new applicable_from date
+                        if applicable_from < existing_tax.applicable_from:
+                            return Response(
+                                {"detail": "New applicable_from date cannot be before the current tax start date."}, 
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+
+                        # Close the existing tax period
+                        end_date = applicable_from - timedelta(days=1)
+                        existing_tax.close_tax_period(end_date)
+
+                        # Create a new tax version
+                        new_tax = Taxes.objects.create(
+                            company=company,
+                            tax_type=validated_data.get('tax_type', existing_tax.tax_type),
+                            tax_percentage=validated_data.get('tax_percentage', existing_tax.tax_percentage),
+                            country=validated_data.get('country', existing_tax.country),
+                            state=validated_data.get('state', existing_tax.state),
+                            applicable_from=applicable_from,
+                            applicable_to=None,
+                            is_active=True,
+                            user=existing_tax.user
+                        )
+                        
+                        # Link the existing tax to the new version
+                        existing_tax.superseded_by = new_tax
+                        existing_tax.save()
+
+                        # Return the serialized new tax record
+                        new_serializer = TaxesSerializer(new_tax)
+                        return Response(new_serializer.data, status=status.HTTP_200_OK)
+                    else:
+                        # Update the existing tax record without versioning
+                        serializer.save()
+                        return Response(serializer.data, status=status.HTTP_200_OK)
+
+            except IntegrityError as e:
+                # Handle database constraint violations
+                logger.error(f"Database integrity error in PUT taxes: {str(e)}")
+                return Response(
+                    {"detail": "A database constraint was violated. Please check your data."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            except ValidationError as e:
+                # Handle validation errors from the model
+                logger.error(f"Validation error in PUT taxes: {str(e)}")
+                return Response(
+                    {"detail": f"Validation error: {str(e)}"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        except Exception as e:
+            # Log unexpected errors for debugging
+            logger.error(f"Unexpected error in PUT taxes: {str(e)}")
             return Response(
-                {"detail": "Company not found."},
-                status=status.HTTP_404_NOT_FOUND
+                {"detail": "An unexpected error occurred while updating the tax record."}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    def delete(self, request, company_id, tax_id):
+        """
+        Soft delete a tax record by setting is_active to False and updating applicable_to.
+        
+        Args:
+            request: The HTTP request object.
+            company_id: The ID of the company associated with the tax record.
+            tax_id: The ID of the tax record to deactivate.
+
+        Returns:
+            Response: JSON response with success or error details.
+        """
         try:
-            existing_tax = Taxes.objects.get(id=tax_id, company=company)
-        except Taxes.DoesNotExist:
+            # Input Validation
+            # Ensure company_id and tax_id are valid positive integers
+            if not company_id or not str(company_id).isdigit():
+                return Response(
+                    {"detail": "Invalid company ID provided."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if not tax_id or not str(tax_id).isdigit():
+                return Response(
+                    {"detail": "Invalid tax ID provided."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Database Operations
+            # Verify the company exists
+            try:
+                company = Company.objects.get(id=company_id)
+            except Company.DoesNotExist:
+                return Response(
+                    {"detail": "Company not found."}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Fetch the tax record
+            try:
+                tax = Taxes.objects.get(id=tax_id, company=company)
+            except Taxes.DoesNotExist:
+                return Response(
+                    {"detail": "Tax record not found."}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Check if Tax is Already Inactive
+            if not tax.is_active:
+                return Response(
+                    {"detail": "Tax record is already inactive."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Transaction Block
+            # Use atomic transaction to ensure database consistency
+            try:
+                with transaction.atomic():
+                    # Soft delete by setting is_active to False and applicable_to to today
+                    tax.is_active = False
+                    tax.applicable_to = date.today()
+                    tax.save()
+
+                    # Return success message
+                    return Response(
+                        {"detail": "Tax record has been successfully deactivated."}, 
+                        status=status.HTTP_200_OK
+                    )
+
+            except IntegrityError as e:
+                # Handle database constraint violations
+                logger.error(f"Database integrity error in DELETE taxes: {str(e)}")
+                return Response(
+                    {"detail": "A database constraint was violated."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        except Exception as e:
+            # Log unexpected errors for debugging
+            logger.error(f"Unexpected error in DELETE taxes: {str(e)}")
             return Response(
-                {"detail": "Tax record not found."},
-                status=status.HTTP_404_NOT_FOUND
+                {"detail": "An unexpected error occurred while deleting the tax record."}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
-        # Validate incoming data
-        serializer = TaxesSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        validated_data = serializer.validated_data
-        applicable_from = validated_data.get('applicable_from', date.today())
-        if isinstance(applicable_from, str):
-            applicable_from = date.fromisoformat(applicable_from)
-
-        # Check if critical fields have changed
-        critical_fields_changed = (
-            validated_data.get('tax_percentage') != existing_tax.tax_percentage or
-            validated_data.get('applicable_from') != existing_tax.applicable_from or
-            validated_data.get('applicable_to') != existing_tax.applicable_to
-        )
-
-        if critical_fields_changed:
-            # Create new version
-            end_date = applicable_from - timedelta(days=1)
-            existing_tax.close_tax_period(end_date)
-            
-            new_tax = serializer.save(
-                company=company,
-                applicable_from=applicable_from
-            )
-            
-            # Link old tax to new one
-            existing_tax.superseded_by = new_tax
-            existing_tax.save()
-            
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        else:
-            # Update existing record (non-critical fields like tax_type, country, state)
-            serializer = TaxesSerializer(existing_tax, data=request.data, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data, status=status.HTTP_200_OK)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class TaxCalculationHelper:
-    """Helper class for tax calculations with historical support"""
-    
+    """
+    Helper class for performing tax calculations and retrieving tax change history.
+    """
+
     @staticmethod
     def calculate_tax(company, tax_type, amount, calculation_date=None):
-        """Calculate tax amount for a specific date"""
+        """
+        Calculate the tax amount for a given company, tax type, and date.
+
+        Args:
+            company: The Company instance to calculate taxes for.
+            tax_type: The type of tax (e.g., 'VAT', 'GST').
+            amount: The base amount to apply the tax rate to.
+            calculation_date: The date for which to calculate the tax (defaults to today).
+
+        Returns:
+            tuple: (tax_amount, tax_record) or (0, None) if no applicable tax record is found.
+        """
         if calculation_date is None:
             calculation_date = date.today()
             
+        # Retrieve the active tax record for the specified date
         tax_record = Taxes.get_active_tax(company, tax_type, calculation_date)
         if not tax_record:
             return 0, None
             
+        # Calculate tax amount based on the tax percentage
         tax_amount = (amount * tax_record.tax_percentage) / 100
         return tax_amount, tax_record
     
     @staticmethod
     def get_tax_changes(company, tax_type, from_date, to_date):
-        """Get all tax changes for a period"""
+        """
+        Retrieve all tax records for a company and tax type within a date range.
+
+        Args:
+            company: The Company instance to query tax records for.
+            tax_type: The type of tax (e.g., 'VAT', 'GST').
+            from_date: The start date of the period.
+            to_date: The end date of the period.
+
+        Returns:
+            QuerySet: Ordered list of tax records within the specified date range.
+        """
         return Taxes.objects.filter(
             company=company,
             tax_type=tax_type,
