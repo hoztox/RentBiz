@@ -12,6 +12,7 @@ urlpatterns = [
     path('users/create/', UserCreateAPIView.as_view(), name='user-create'),
     path('users/company/<int:company_id>/', UserListByCompanyAPIView.as_view(), name='user-list-by-company'),
     path('users/<int:user_id>/', UserDetailAPIView.as_view(), name='user-detail'),
+    path('user/<int:user_id>/details/', UserDetailView.as_view(), name='user-detail'),
     
     
     # Building Properties
@@ -80,7 +81,9 @@ urlpatterns = [
     path('tenancy/<int:tenancy_id>/renew/', TenancyRenewalView.as_view(), name='tenancy-renew'),
     
     
-   
+    #Taxes
+    path('taxes/<int:company_id>/<int:tax_id>/', TaxesAPIView.as_view(), name='taxes'),
+    path('taxes/<int:company_id>/', TaxesAPIView.as_view(), name='taxes'),
     
 ]
 

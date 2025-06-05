@@ -353,11 +353,6 @@ class ChargesGetSerializer(serializers.ModelSerializer):
         model = Charges
         fields = '__all__'
         
-        
-        
- 
-
- 
 
 class PaymentScheduleSerializer(serializers.ModelSerializer):
     charge_type_name = serializers.CharField(source='charge_type.name', read_only=True)
@@ -432,8 +427,7 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                 continue
         return tenancy
     def _create_payment_schedules(self, tenancy):
-        from decimal import Decimal
-        from datetime import timedelta
+ 
         payment_schedules = []
 
         rent_charge = Charges.objects.filter(name='Rent').first()
@@ -535,7 +529,11 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
             if updated_unit:
                 updated_unit.unit_status = "occupied"
                 updated_unit.save()
-
+                
+        if instance.is_close:   
+            if instance.unit:
+                instance.unit.unit_status = "vacant"
+                instance.unit.save()
    
         if additional_charges_data is not None:
             PaymentSchedule.objects.filter(tenancy=instance).delete()
@@ -687,8 +685,7 @@ class TenancyRenewalSerializer(serializers.ModelSerializer):
 
     def _create_payment_schedules(self, tenancy):
         """Create payment schedules for the renewed tenancy"""
-        from decimal import Decimal
-        from datetime import timedelta
+
         payment_schedules = []
 
         rent_charge = Charges.objects.filter(name='Rent').first()
@@ -763,3 +760,18 @@ class TenancyRenewalSerializer(serializers.ModelSerializer):
 
         if payment_schedules:
             PaymentSchedule.objects.bulk_create(payment_schedules)
+
+
+class TaxesSerializer(serializers.ModelSerializer):
+    country_name = serializers.SerializerMethodField()
+    state_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Taxes
+        fields = '__all__'
+
+    def get_country_name(self, obj):
+        return obj.country.name if obj.country else None
+
+    def get_state_name(self, obj):
+        return obj.state.name if obj.state else None

@@ -60,6 +60,23 @@ class User(AbstractBaseUser, PermissionsMixin):
         return self.email
 
 
+class Country(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    code = models.CharField(max_length=10, unique=True, blank=True, null=True)
+
+    def __str__(self):
+        return self.name
+
+class State(models.Model):
+    name = models.CharField(max_length=100)
+    country = models.ForeignKey(Country, on_delete=models.CASCADE, related_name='states')
+
+    class Meta:
+        unique_together = ('name', 'country')
+
+    def __str__(self):
+        return self.name
+
 
 class Company(models.Model):
     user_id = models.CharField(max_length=255, unique=True,blank=True, null=True)

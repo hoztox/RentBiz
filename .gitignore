@@ -1,6 +1,8 @@
-
-
-
-
 .env
+venv/
 
+# Ignore Python compiled files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyc
