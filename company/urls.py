@@ -26,7 +26,7 @@ urlpatterns = [
     # unit Properties
     path('units/create/', UnitCreateView.as_view(), name='unit-create'),
     path('units/<int:pk>/', UnitDetailView.as_view(), name='unit-detail'),
-    path('units/<int:pk>/edit/', UnitEditView.as_view(), name='unit-edit'),
+    path('units/<int:id>/edit/', UnitEditAPIView.as_view(), name='unit-edit'),
     path('units/company/<int:company_id>/', UnitsByCompanyView.as_view(), name='units-by-company'),
     path('units/<int:building_id>/vacant-units/', VacantUnitsByBuildingView.as_view(), name='vacant-units-by-building'),
     path('units/<int:building_id>/occupied-units/', OccupiedUnitsByBuildingView.as_view(), name='vacant-units-by-building'),

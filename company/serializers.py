@@ -306,11 +306,13 @@ class TenantSerializer(serializers.ModelSerializer):
         instance.save()
 
         if documents_data is not None:
+            # Get existing documents with their IDs
             existing_docs = {doc.id: doc for doc in instance.tenant_comp.all()}
-            new_doc_ids = []
+            processed_doc_ids = []
 
             for doc_data in documents_data:
                 doc_id = doc_data.get('id')
+                
                 if doc_id and doc_id in existing_docs:
                     # Update existing document
                     doc_instance = existing_docs[doc_id]
@@ -318,15 +320,17 @@ class TenantSerializer(serializers.ModelSerializer):
                         if attr != 'id':
                             setattr(doc_instance, attr, value)
                     doc_instance.save()
-                    new_doc_ids.append(doc_id)
+                    processed_doc_ids.append(doc_id)
                 else:
-                    # Create new document
-                    new_doc = TenantDocumentType.objects.create(tenant=instance, **doc_data)
-                    new_doc_ids.append(new_doc.id)
+                    # Create new document (remove 'id' if it exists but doesn't match existing)
+                    doc_data_copy = doc_data.copy()
+                    doc_data_copy.pop('id', None)  # Remove id for new documents
+                    new_doc = TenantDocumentType.objects.create(tenant=instance, **doc_data_copy)
+                    processed_doc_ids.append(new_doc.id)
 
-            # Delete documents that are not in the updated list
+            # Delete documents that are not in the processed list
             for doc_id, doc_instance in existing_docs.items():
-                if doc_id not in new_doc_ids:
+                if doc_id not in processed_doc_ids:
                     doc_instance.delete()
 
         return instance

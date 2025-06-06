@@ -663,77 +663,50 @@ class UnitsByCompanyView(APIView):
     
  
 
-class UnitEditView(APIView):
-    def put(self, request, pk):
-        print("Raw request data:", request.data)
-        print("Files keys received:", request.FILES.keys())
+class UnitEditAPIView(APIView):
 
-        try:
-            unit = Units.objects.get(pk=pk)
-        except Units.DoesNotExist:
-            return Response({'error': 'Unit not found'}, status=status.HTTP_404_NOT_FOUND)
+    def get_object(self, id):
+        return get_object_or_404(Units, id=id)
 
-     
-        if 'upload_file' in request.FILES:
-            uploaded_file = request.FILES['upload_file']
-            print(f"Processing file: {uploaded_file.name}")
-            
-            
-            existing_doc = unit.unit_comp.first()  
-            
-            if existing_doc:
-       
-                existing_doc.upload_file = uploaded_file
-                existing_doc.save()
-                print(f"Updated existing document {existing_doc.id} with file: {existing_doc.upload_file}")
-            else:
-        
-                new_doc = UnitDocumentType.objects.create(
-                    unit=unit,
-                    upload_file=uploaded_file,
-                    number='AUTO-' + str(unit.id),
-                    doc_type_id=1   
-                )
-                print(f"Created new document {new_doc.id} with file: {new_doc.upload_file}")
+    def get(self, request, id):
+        unit = self.get_object(id)
+        serializer = UnitSerializer(unit)
+        return Response(serializer.data)
 
-     
+    def put(self, request, id):
+        print("Incoming PUT data:", request.data)
+        unit = self.get_object(id)
+
         unit_data = {}
+        excluded_keys = ['id', 'doc_type', 'number', 'issued_date', 'expiry_date']
         for key, value in request.data.items():
-            if key not in ['upload_file', 'unit_comp_json'] and not key.startswith('document_file_'):
+            if key not in excluded_keys and not key.startswith('document_file_'):
                 unit_data[key] = value
 
-   
-        if unit_data:
-            serializer = UnitSerializer(unit, data=unit_data, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-                print("Unit data updated successfully")
-            else:
-                print("Serializer errors:", serializer.errors)
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # Extract document data
+        doc_data = {
+            'id': request.data.get('id'),   
+            'doc_type': request.data.get('doc_type'),
+            'number': request.data.get('number'),
+            'issued_date': request.data.get('issued_date'),
+            'expiry_date': request.data.get('expiry_date'),
+        }
 
-     
-        response_serializer = UnitSerializer(unit)
-        print("Final response:", response_serializer.data)
-        
-        return Response(response_serializer.data, status=status.HTTP_200_OK)
+        if 'document_file_0' in request.FILES:
+            doc_data['upload_file'] = request.FILES['document_file_0']
 
+        unit_data['unit_comp'] = [doc_data]  # attach as list
 
- 
-    
-    def get(self, request, pk):
-        """
-        Retrieve a specific unit for editing
-        """
-        try:
-            unit = Units.objects.get(pk=pk)
-            serializer = UnitSerializer(unit)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except Units.DoesNotExist:
-            return Response(
-                {'error': 'Unit not found'}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
+        print("Processed unit data:", unit_data)
+
+        serializer = UnitSerializer(unit, data=unit_data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            print("Unit updated successfully")
+            return Response(serializer.data)
+        else:
+            print("Errors in serializer:", serializer.errors)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class UnitTypeListCreateAPIView(APIView):
     def post(self, request):
@@ -937,7 +910,6 @@ class TenantCreateView(APIView):
 
     
 class TenantDetailView(APIView):
-    
 
     def get_object(self, pk):
         try:
@@ -953,37 +925,41 @@ class TenantDetailView(APIView):
         return Response(serializer.data)
 
     def put(self, request, pk):
+        print("Raw data:", request.data)
         tenant = self.get_object(pk)
         if not tenant:
             return Response({'error': 'Tenant not found'}, status=status.HTTP_404_NOT_FOUND)
 
         tenant_data = {}
+        excluded_keys = ['id', 'doc_type', 'number', 'issued_date', 'expiry_date']
         for key, value in request.data.items():
-            if key != 'tenant_comp_json' and not key.startswith('document_file_'):
+            if key not in excluded_keys and not key.startswith('document_file_'):
                 tenant_data[key] = value
 
-        tenant_comp_json = request.data.get('tenant_comp_json')
-        if tenant_comp_json:
-            try:
-                tenant_comp_data = json.loads(tenant_comp_json)
+        # Build document data
+        doc_data = {
+            'id': request.data.get('id'),
+            'doc_type': request.data.get('doc_type'),
+            'number': request.data.get('number'),
+            'issued_date': request.data.get('issued_date'),
+            'expiry_date': request.data.get('expiry_date'),
+        }
 
-                for doc_data in tenant_comp_data:
-                    file_index = doc_data.pop('file_index', None)
-                    if file_index is not None:
-                        file_key = f'document_file_{file_index}'
-                        if file_key in request.FILES:
-                            doc_data['upload_file'] = request.FILES[file_key]
-              
-                tenant_data['tenant_comp'] = tenant_comp_data
+        if 'document_file_0' in request.FILES:
+            doc_data['upload_file'] = request.FILES['document_file_0']
 
-            except json.JSONDecodeError:
-                return Response({'error': 'Invalid JSON in tenant_comp_json'}, status=status.HTTP_400_BAD_REQUEST)
+        tenant_data['tenant_comp'] = [doc_data]
+
+        print("Processed tenant data:", tenant_data)
 
         serializer = TenantSerializer(tenant, data=tenant_data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            print("Updated tenant:", serializer.data)
             return Response(serializer.data)
+        print("Serializer errors:", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
     def delete(self, request, pk):
         building = self.get_object(pk)
