@@ -24,6 +24,13 @@ from collections import defaultdict
 from django.utils import timezone
 import json
 from datetime import date
+from django.template.loader import get_template
+ 
+from xhtml2pdf import pisa
+from io import BytesIO
+ 
+from django.http import HttpResponse
+ 
 
 
  
@@ -1813,3 +1820,23 @@ class TaxCalculationHelper:
             applicable_from__gte=from_date,
             applicable_from__lte=to_date
         ).order_by('applicable_from')
+        
+        
+        
+
+ 
+
+class TenancyHTMLPDFView(APIView):
+    def get(self, request, tenancy_id):
+        tenancy = get_object_or_404(Tenancy, pk=tenancy_id)
+        template = get_template("company/tenancy_pdf.html")
+        html = template.render({'tenancy': tenancy})
+
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="tenancy_{tenancy.tenancy_code}.pdf"'
+
+        pisa_status = pisa.CreatePDF(html, dest=response)
+
+        if pisa_status.err:
+            return HttpResponse("Error generating PDF", status=500)
+        return response

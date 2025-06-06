@@ -79,6 +79,7 @@ urlpatterns = [
     path('tenancies/close/<int:company_id>/', CloseTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
     path('tenancy/<int:pk>/confirm/', ConfirmTenancyView.as_view(), name='confirm-tenancy'),
     path('tenancy/<int:tenancy_id>/renew/', TenancyRenewalView.as_view(), name='tenancy-renew'),
+    path('tenancy/<int:tenancy_id>/download-pdf/', TenancyHTMLPDFView.as_view(), name='tenancy-download-pdf'),
     
     
     #Taxes
