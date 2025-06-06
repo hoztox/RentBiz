@@ -452,7 +452,9 @@ class PaymentSchedule(models.Model):
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='pending')   
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    # VAT will remove after testing
     vat = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    tax = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
 
   
