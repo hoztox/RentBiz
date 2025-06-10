@@ -320,7 +320,7 @@ class Tenancy(models.Model):
     status = models.CharField(max_length=20, choices=status_choices, default='pending')
     
     deposit = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    commision = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    commission = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     remarks = models.TextField(null=True, blank=True)
     
     is_termination = models.BooleanField(default=False)
@@ -400,7 +400,6 @@ class Tenancy(models.Model):
 
 
 
-
 class PaymentSchedule(models.Model):
     tenancy = models.ForeignKey('Tenancy', on_delete=models.CASCADE, related_name='payment_schedules', null=True, blank=True)
     charge_type = models.ForeignKey('Charges', on_delete=models.CASCADE, related_name='char', null=True, blank=True)   
@@ -412,7 +411,9 @@ class PaymentSchedule(models.Model):
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='pending')   
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    # VAT will remove after testing
     vat = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    tax = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
 
   
@@ -433,7 +434,9 @@ class AdditionalCharge(models.Model):
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='pending')   
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    # VAT will remove after testing
     vat = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    tax = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
 
    
