@@ -3,7 +3,7 @@ from rest_framework import serializers
 from django.contrib.auth.hashers import make_password
 from .models import *
 from decimal import Decimal
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,date
 from django.db import transaction
 
 class UserSerializer(serializers.ModelSerializer):
@@ -352,69 +352,102 @@ class ChargesGetSerializer(serializers.ModelSerializer):
     class Meta:
         model = Charges
         fields = '__all__'
-        
 
 
-
-class AdditionalChargeSerializer(serializers.ModelSerializer):
-    charge_type_name = serializers.CharField(source='charge_type.name', read_only=True)
-
-    class Meta:
-        model = AdditionalCharge
-        fields = ['id', 'charge_type', 'charge_type_name', 'reason', 'due_date', 'status', 'amount', 'tax', 'total']
-        extra_kwargs = {
-            'tenancy': {'required': False, 'allow_null': True},
-            'charge_type': {'required': True},
-            'reason': {'required': True},
-            'due_date': {'required': True},
-            'amount': {'required': True},
-            'tax': {'read_only': True},
-            'total': {'read_only': True},
-            'status': {'read_only': True},
-        }
+class AdditionalChargeSerializer(serializers.Serializer):
+    id = serializers.CharField(read_only=True)
+    charge_type = serializers.IntegerField()
+    charge_type_name = serializers.CharField(read_only=True)
+    reason = serializers.CharField(max_length=255)
+    due_date = serializers.DateField()
+    status = serializers.CharField(read_only=True)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+    tax = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    total = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    tax_details = serializers.ListField(child=serializers.DictField(), read_only=True)
 
     def validate(self, data):
-        charge_type_id = data.get('charge_type')
-        amount = data.get('amount')
-        due_date = data.get('due_date')
-        reason = data.get('reason')
+        try:
+            charge_type_id = data.get('charge_type')
+            amount = data.get('amount')
+            due_date = data.get('due_date')
+            reason = data.get('reason')
 
-        print(f"Validating AdditionalChargeSerializer data: {data}")
+            if not charge_type_id:
+                raise serializers.ValidationError("Charge type is required.")
+            if not reason:
+                raise serializers.ValidationError("Reason is required.")
+            if not due_date:
+                raise serializers.ValidationError("Due date is required.")
+            if not amount or amount < 0:
+                raise serializers.ValidationError("Amount is required and must be non-negative.")
 
-        if not charge_type_id:
-            raise serializers.ValidationError("Charge type is required.")
-        if not reason:
-            raise serializers.ValidationError("Reason is required.")
-        if not due_date:
-            raise serializers.ValidationError("Due date is required.")
-        if not amount or amount < 0:
-            raise serializers.ValidationError("Amount is required and must be non-negative.")
+            charge_type = Charges.objects.filter(id=charge_type_id).first()
+            if not charge_type:
+                raise serializers.ValidationError(f"Charge type with id {charge_type_id} not found.")
 
-        charge_type = Charges.objects.filter(id=charge_type_id).first()
-        if not charge_type:
-            raise serializers.ValidationError(f"Charge type with id {charge_type_id} not found.")
+            # Set charge_type_name
+            data['charge_type_name'] = charge_type.name
 
-        tax_amount = Decimal('0.00')
-        active_tax = Taxes.get_active_tax(charge_type.company, charge_type.name, due_date or date.today())
-        print(f"AdditionalChargeSerializer tax - Charge: {charge_type.name}, Due date: {due_date}, Active tax: {active_tax}")
-        if active_tax:
-            tax_percentage = Decimal(str(active_tax.tax_percentage))
-            print(f"Tax percentage: {tax_percentage}")
-            tax_amount = (Decimal(str(amount)) * tax_percentage) / Decimal('100')
-            print(f"Calculated tax amount: {tax_amount}")
-        data['tax'] = tax_amount
-        data['total'] = Decimal(str(amount)) + tax_amount
-        print(f"AdditionalChargeSerializer - Tax: {tax_amount}, Total: {data['total']}")
+            # Calculate taxes
+            tax_amount = Decimal('0.00')
+            tax_details = []
+            reference_date = due_date if isinstance(due_date, date) else datetime.strptime(due_date, '%Y-%m-%d').date()
+            taxes = charge_type.taxes.filter(
+                company=charge_type.company,
+                is_active=True,
+                applicable_from__lte=reference_date,
+                applicable_to__gte=reference_date
+            ) | charge_type.taxes.filter(
+                company=charge_type.company,
+                is_active=True,
+                applicable_from__lte=reference_date,
+                applicable_to__isnull=True
+            )
+            for tax in taxes:
+                tax_percentage = Decimal(str(tax.tax_percentage))
+                tax_contribution = (Decimal(str(amount)) * tax_percentage) / Decimal('100')
+                tax_amount += tax_contribution
+                tax_details.append({
+                    'tax_type': tax.tax_type,
+                    'tax_percentage': tax_percentage,
+                    'tax_amount': tax_contribution.quantize(Decimal('0.01'))
+                })
 
-        return data
+            data['tax'] = tax_amount.quantize(Decimal('0.01'))
+            data['total'] = (Decimal(str(amount)) + tax_amount).quantize(Decimal('0.01'))
+            data['tax_details'] = tax_details
+
+            return data
+
+        except Exception as e:
+            raise serializers.ValidationError(f"Validation error: {str(e)}")
+
+    def to_representation(self, instance):
+        if isinstance(instance, dict):
+            # Handle dictionary input for preview
+            return {
+                'id': instance.get('id'),
+                'charge_type': instance.get('charge_type'),
+                'charge_type_name': instance.get('charge_type_name'),
+                'reason': instance.get('reason'),
+                'due_date': instance.get('due_date'),
+                'status': instance.get('status'),
+                'amount': instance.get('amount'),
+                'tax': instance.get('tax'),
+                'total': instance.get('total'),
+                'tax_details': instance.get('tax_details')
+            }
+        return super().to_representation(instance)
 
 
 class PaymentScheduleSerializer(serializers.ModelSerializer):
     charge_type_name = serializers.CharField(source='charge_type.name', read_only=True)
+    tax_details = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = PaymentSchedule
-        fields = ['id', 'charge_type', 'charge_type_name', 'reason', 'due_date', 'status', 'amount', 'tax', 'total']
+        fields = ['id', 'charge_type', 'charge_type_name', 'reason', 'due_date', 'status', 'amount', 'tax', 'total', 'tax_details']
         extra_kwargs = {
             'tenancy': {'required': False, 'allow_null': True},
             'charge_type': {'required': False, 'allow_null': True},
@@ -425,6 +458,11 @@ class PaymentScheduleSerializer(serializers.ModelSerializer):
             'total': {'required': False, 'allow_null': True},
             'status': {'read_only': True},
         }
+
+    def get_tax_details(self, obj):
+        if isinstance(obj, dict):
+            return obj.get('tax_details', [])
+        return obj.tax_details if hasattr(obj, 'tax_details') else []
 
 
 class TenancyCreateSerializer(serializers.ModelSerializer):
@@ -443,25 +481,26 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
         for field in required_fields:
             if field not in data or not data[field]:
                 raise serializers.ValidationError(f"{field.replace('_', ' ')} is required.")
-        print(f"TenancyCreateSerializer validated data: {data}")
         return data
 
     @transaction.atomic
     def create(self, validated_data):
-        print(f"Creating tenancy with data: {validated_data}")
         additional_charges_data = validated_data.pop('additional_charges', [])
         tenancy = super().create(validated_data)
-   
+
         for charge_data in additional_charges_data:
-            charge_type = charge_data.get('charge_type')
+            charge_type_id = charge_data.get('charge_type')
+            charge_type = Charges.objects.filter(id=charge_type_id).first()
+            if not charge_type:
+                raise serializers.ValidationError(f"Charge type with id {charge_type_id} not found.")
+            
             amount = charge_data.get('amount')
             due_date = charge_data.get('due_date')
             reason = charge_data.get('reason')
-
             tax_amount = charge_data.get('tax', Decimal('0.00'))
             total = charge_data.get('total', Decimal(str(amount)) + tax_amount)
-            print(f"Creating additional charge - Charge: {charge_type.name}, Amount: {amount}, Tax: {tax_amount}, Total: {total}")
 
+            # Do not include tax_details in model creation
             AdditionalCharge.objects.create(
                 tenancy=tenancy,
                 charge_type=charge_type,
@@ -470,11 +509,10 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                 status='pending',
                 amount=amount,
                 tax=tax_amount,
-                total=total,
+                total=total
             )
 
         self._create_payment_schedules(tenancy)
-     
         return tenancy
 
     def _create_payment_schedules(self, tenancy):
@@ -485,16 +523,8 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
         commission_charge = Charges.objects.filter(name='Commission').first()
 
         if tenancy.deposit and deposit_charge:
-            tax_amount = Decimal('0.00')
-            active_tax = Taxes.get_active_tax(deposit_charge.company, deposit_charge.name, tenancy.start_date)
-            print(f"Deposit payment schedule - Charge: {deposit_charge.name}, Start date: {tenancy.start_date}, Active tax: {active_tax}")
-            if active_tax:
-                tax_percentage = Decimal(str(active_tax.tax_percentage))
-                print(f"Deposit tax percentage: {tax_percentage}")
-                tax_amount = (tenancy.deposit * tax_percentage) / Decimal('100')
-                print(f"Deposit tax amount: {tax_amount}")
+            tax_amount, tax_details = self._calculate_tax(tenancy.deposit, deposit_charge, tenancy.start_date)
             total = tenancy.deposit + tax_amount
-            print(f"Deposit payment schedule - Amount: {tenancy.deposit}, Tax: {tax_amount}, Total: {total}")
             payment_schedules.append(PaymentSchedule(
                 tenancy=tenancy,
                 charge_type=deposit_charge,
@@ -506,38 +536,22 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                 total=total
             ))
 
-        if tenancy.commision and commission_charge:
-            tax_amount = Decimal('0.00')
-            active_tax = Taxes.get_active_tax(commission_charge.company, commission_charge.name, tenancy.start_date)
-            print(f"Commission payment schedule - Charge: {commission_charge.name}, Start date: {tenancy.start_date}, Active tax: {active_tax}")
-            if active_tax:
-                tax_percentage = Decimal(str(active_tax.tax_percentage))
-                print(f"Commission tax percentage: {tax_percentage}")
-                tax_amount = (tenancy.commision * tax_percentage) / Decimal('100')
-                print(f"Commission tax amount: {tax_amount}")
-            total = tenancy.commision + tax_amount
-            print(f"Commission payment schedule - Amount: {tenancy.commision}, Tax: {tax_amount}, Total: {total}")
+        if tenancy.commission and commission_charge:
+            tax_amount, tax_details = self._calculate_tax(tenancy.commission, commission_charge, tenancy.start_date)
+            total = tenancy.commission + tax_amount
             payment_schedules.append(PaymentSchedule(
                 tenancy=tenancy,
                 charge_type=commission_charge,
                 reason='Commission',
                 due_date=tenancy.start_date,
                 status='pending',
-                amount=tenancy.commision,
+                amount=tenancy.commission,
                 tax=tax_amount,
                 total=total
             ))
 
         if tenancy.rent_per_frequency and tenancy.no_payments and rent_charge:
-            rent_tax = Decimal('0.00')
-            active_tax = Taxes.get_active_tax(rent_charge.company, rent_charge.name, tenancy.first_rent_due_on)
-            print(f"Rent payment schedule - Charge: {rent_charge.name}, First rent due on: {tenancy.first_rent_due_on}, Active tax: {active_tax}")
-            if active_tax:
-                tax_percentage = Decimal(str(active_tax.tax_percentage))
-                print(f"Rent tax percentage: {tax_percentage}")
-                rent_tax = (tenancy.rent_per_frequency * tax_percentage) / Decimal('100')
-                print(f"Rent tax amount: {rent_tax}")
-
+            rent_tax, tax_details = self._calculate_tax(tenancy.rent_per_frequency, rent_charge, tenancy.first_rent_due_on)
             rental_months = tenancy.rental_months or 12
             payment_frequency_months = rental_months // tenancy.no_payments if tenancy.no_payments > 0 else 1
 
@@ -549,7 +563,6 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                 12: 'Annual Rent'
             }
             reason = reason_map.get(payment_frequency_months, f'{payment_frequency_months}-Monthly Rent')
-            print(f"Rent payment schedule reason: {reason}")
 
             for i in range(tenancy.no_payments):
                 due_date = tenancy.first_rent_due_on
@@ -560,10 +573,8 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                         year += 1
                         month -= 12
                     due_date = due_date.replace(year=year, month=month)
-                    print(f"Rent payment {i+1} due date: {due_date}")
 
                 total = tenancy.rent_per_frequency + rent_tax
-                print(f"Rent payment {i+1} - Amount: {tenancy.rent_per_frequency}, Tax: {rent_tax}, Total: {total}")
                 payment_schedules.append(PaymentSchedule(
                     tenancy=tenancy,
                     charge_type=rent_charge,
@@ -576,8 +587,36 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
                 ))
 
         if payment_schedules:
-            print(f"Bulk creating payment schedules: {len(payment_schedules)} entries")
             PaymentSchedule.objects.bulk_create(payment_schedules)
+
+    def _calculate_tax(self, amount, charge, reference_date):
+        tax_amount = Decimal('0.00')
+        tax_details = []
+        reference_date_obj = reference_date if isinstance(reference_date, date) else datetime.strptime(reference_date, '%Y-%m-%d').date()
+
+        taxes = charge.taxes.filter(
+            company=charge.company,
+            is_active=True,
+            applicable_from__lte=reference_date_obj,
+            applicable_to__gte=reference_date_obj
+        ) | charge.taxes.filter(
+            company=charge.company,
+            is_active=True,
+            applicable_from__lte=reference_date_obj,
+            applicable_to__isnull=True
+        )
+
+        for tax in taxes:
+            tax_percentage = Decimal(str(tax.tax_percentage))
+            tax_contribution = (amount * tax_percentage) / Decimal('100')
+            tax_amount += tax_contribution
+            tax_details.append({
+                'tax_type': tax.tax_type,
+                'tax_percentage': tax_percentage,
+                'tax_amount': tax_contribution.quantize(Decimal('0.01'))
+            })
+
+        return tax_amount.quantize(Decimal('0.01')), tax_details
 
 
 class PaymentScheduleGetSerializer(serializers.ModelSerializer):

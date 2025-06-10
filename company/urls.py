@@ -71,6 +71,7 @@ urlpatterns = [
     
     # Tenancy
     path('tenancies/preview-payment-schedule/', PaymentSchedulePreviewView.as_view(), name='payment-schedule-preview'),
+    path('tenancies/preview-additional-charge-tax/', AdditionalChargeTaxPreviewView.as_view(), name='preview-additional-charge-tax'),
     path('tenancies/create/', TenancyCreateView.as_view(), name='tenancy-create'),
     path('tenancies/<int:pk>/', TenancyDetailView.as_view(), name='tenancy-detail'),
     path('tenancies/company/<int:company_id>/', TenancyByCompanyAPIView.as_view(), name='tenancies-by-company'),

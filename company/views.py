@@ -24,6 +24,7 @@ from collections import defaultdict
 from django.utils import timezone
 import json
 from datetime import date
+import uuid
 
 
  
@@ -1063,117 +1064,29 @@ class ChargesDetailAPIView(APIView):
         unit_type.delete()
         return Response({"message": "Deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
 
+
 class PaymentSchedulePreviewView(APIView):
-    """
-    Generate a preview of the payment schedule based on tenancy data.
-    
-    This API endpoint creates a payment schedule preview including deposits,
-    commissions, and rent payments based on the provided tenancy parameters.
-    
-    Request Method: POST
-    
-    Request Body Parameters:
-    - company (int, required): Company ID
-    - rental_months (int, optional): Total rental period in months (default: 12)
-    - no_payments (int, optional): Number of rent payments (default: 0)
-    - first_rent_due_on (str, required): First rent due date in YYYY-MM-DD format
-    - rent_per_frequency (float/str, optional): Rent amount per payment frequency (default: 0)
-    - deposit (float/str, optional): Deposit amount (default: 0)
-    - commission (float/str, optional): Commission amount (default: 0)
-    - start_date (str, required): Tenancy start date in YYYY-MM-DD format
-    
-    Response Format:
-    {
-        "success": bool,
-        "message": str,
-        "payment_schedules": [
-            {
-                "id": str,
-                "charge_type": object,
-                "charge_type_name": str,
-                "reason": str,
-                "due_date": str,
-                "status": str,
-                "amount": decimal,
-                "tax": decimal,
-                "total": decimal
-            }
-        ]
-    }
-    
-    Error Responses:
-    - 400: Missing required fields, invalid data types, or processing errors
-    - 500: Internal server errors
-    """
-
     def _ensure_charge_types(self, company_id):
-        """
-        Ensure Rent, Deposit, and Commission charge types exist for the company.
-        
-        Args:
-            company_id (int): The company ID
-            
-        Returns:
-            dict: Dictionary containing charge type objects
-            
-        Raises:
-            Exception: If there's an error creating charge types
-        """
-        charge_types = {
-            'Rent': None,
-            'Deposit': None,
-            'Commission': None
-        }
-
+        charge_types = {'Rent': None, 'Deposit': None, 'Commission': None}
         try:
             for charge_name in charge_types:
-                charge_code = ChargeCode.objects.filter(
-                    title=charge_name, 
-                    company_id=company_id
-                ).first()
-                
+                charge_code = ChargeCode.objects.filter(title=charge_name, company_id=company_id).first()
                 if not charge_code:
-                    charge_code = ChargeCode.objects.create(
-                        company_id=company_id,
-                        title=charge_name
-                    )
+                    charge_code = ChargeCode.objects.create(company_id=company_id, title=charge_name)
 
-                charge = Charges.objects.filter(
-                    name=charge_name, 
-                    company_id=company_id
-                ).first()
-                
+                charge = Charges.objects.filter(name=charge_name, company_id=company_id).first()
                 if not charge:
-                    charge = Charges.objects.create(
-                        company_id=company_id,
-                        name=charge_name,
-                        charge_code=charge_code
-                    )
+                    charge = Charges.objects.create(company_id=company_id, name=charge_name, charge_code=charge_code)
 
                 charge_types[charge_name] = charge
-
             return charge_types
-            
         except Exception as e:
             raise Exception(f"Error ensuring charge types: {str(e)}")
 
     def _validate_request_data(self, data):
-        """
-        Validate the incoming request data.
-        
-        Args:
-            data (dict): Request data
-            
-        Returns:
-            dict: Validated and processed data
-            
-        Raises:
-            ValueError: If validation fails
-        """
         try:
             required_fields = ['company', 'first_rent_due_on', 'start_date']
             missing_fields = [field for field in required_fields if not data.get(field)]
-            
             if missing_fields:
                 raise ValueError(f"Missing required fields: {', '.join(missing_fields)}")
 
@@ -1196,7 +1109,7 @@ class PaymentSchedulePreviewView(APIView):
             decimal_fields = {
                 'rent_per_frequency': data.get('rent_per_frequency', 0),
                 'deposit': data.get('deposit', 0),
-                'commission': data.get('commision', 0)
+                'commission': data.get('commission', 0)
             }
 
             for field, value in decimal_fields.items():
@@ -1207,62 +1120,54 @@ class PaymentSchedulePreviewView(APIView):
 
             if validated_data['rental_months'] <= 0:
                 raise ValueError("Rental months must be greater than 0")
-                
             if validated_data['no_payments'] < 0:
                 raise ValueError("Number of payments cannot be negative")
-                
             if validated_data['no_payments'] > validated_data['rental_months']:
                 raise ValueError("Number of payments cannot exceed rental months")
 
-            print(f"Validated data: {validated_data}")
             return validated_data
-            
         except (ValueError, TypeError) as e:
             raise ValueError(f"Data validation error: {str(e)}")
 
     def _calculate_tax(self, amount, charge, reference_date):
-        """
-        Calculate tax amount for a given charge using ManyToMany taxes relationship.
-        
-        Args:
-            amount (Decimal): Base amount
-            charge (Charges): Charge object
-            reference_date (str): Date for tax calculation
-            
-        Returns:
-            Decimal: Tax amount
-        """
         try:
-            print(f"Calculating tax for amount: {amount}, charge: {charge.name}, reference_date: {reference_date}")
             tax_amount = Decimal('0.00')
+            tax_details = []
             reference_date_obj = datetime.strptime(reference_date, '%Y-%m-%d').date() if reference_date else date.today()
-            print(f"Reference date object: {reference_date_obj}")
-            
-            active_tax = Taxes.get_active_tax(charge.company, charge.name, reference_date_obj)
-            print(f"Active tax: {active_tax}")
-            if active_tax:
-                tax_percentage = Decimal(str(active_tax.tax_percentage))
-                print(f"Tax percentage: {tax_percentage}")
-                tax_amount = (amount * tax_percentage) / Decimal('100')
-                print(f"Calculated tax amount: {tax_amount}")
-                
-            return tax_amount
+
+            taxes = charge.taxes.filter(
+                company=charge.company,
+                is_active=True,
+                applicable_from__lte=reference_date_obj,
+                applicable_to__gte=reference_date_obj
+            ) | charge.taxes.filter(
+                company=charge.company,
+                is_active=True,
+                applicable_from__lte=reference_date_obj,
+                applicable_to__isnull=True
+            )
+
+            for tax in taxes:
+                tax_percentage = Decimal(str(tax.tax_percentage))
+                tax_contribution = (amount * tax_percentage) / Decimal('100')
+                tax_amount += tax_contribution
+                tax_details.append({
+                    'tax_type': tax.tax_type,
+                    'tax_percentage': tax_percentage,
+                    'tax_amount': tax_contribution.quantize(Decimal('0.01'))
+                })
+
+            return tax_amount.quantize(Decimal('0.01')), tax_details
         except Exception as e:
-            print(f"Error in tax calculation: {str(e)}")
-            return Decimal('0.00')
+            return Decimal('0.00'), []
 
     def _generate_deposit_schedule(self, validated_data, charge_types):
-        """Generate deposit payment schedule entry."""
         schedules = []
         deposit = validated_data['deposit']
         deposit_charge = charge_types['Deposit']
-        
         if deposit and deposit_charge:
-            print(f"Generating deposit schedule: deposit={deposit}, charge={deposit_charge.name}")
-            tax_amount = self._calculate_tax(deposit, deposit_charge, validated_data['start_date'])
+            tax_amount, tax_details = self._calculate_tax(deposit, deposit_charge, validated_data['start_date'])
             total = deposit + tax_amount
-            print(f"Deposit schedule - Tax: {tax_amount}, Total: {total}")
-            
             schedules.append({
                 'id': '01',
                 'charge_type': deposit_charge,
@@ -1272,23 +1177,18 @@ class PaymentSchedulePreviewView(APIView):
                 'status': 'pending',
                 'amount': deposit,
                 'tax': tax_amount,
-                'total': total
+                'total': total,
+                'tax_details': tax_details
             })
-            
         return schedules
 
     def _generate_commission_schedule(self, validated_data, charge_types):
-        """Generate commission payment schedule entry."""
         schedules = []
         commission = validated_data['commission']
         commission_charge = charge_types['Commission']
-        
         if commission and commission_charge:
-            print(f"Generating commission schedule: commission={commission}, charge={commission_charge.name}")
-            tax_amount = self._calculate_tax(commission, commission_charge, validated_data['start_date'])
+            tax_amount, tax_details = self._calculate_tax(commission, commission_charge, validated_data['start_date'])
             total = commission + tax_amount
-            print(f"Commission schedule - Tax: {tax_amount}, Total: {total}")
-            
             schedules.append({
                 'id': '02',
                 'charge_type': commission_charge,
@@ -1298,28 +1198,22 @@ class PaymentSchedulePreviewView(APIView):
                 'status': 'pending',
                 'amount': commission,
                 'tax': tax_amount,
-                'total': total
+                'total': total,
+                'tax_details': tax_details
             })
-            
         return schedules
 
     def _generate_rent_schedule(self, validated_data, charge_types):
-        """Generate rent payment schedule entries."""
         schedules = []
         rent_per_frequency = validated_data['rent_per_frequency']
         no_payments = validated_data['no_payments']
         rent_charge = charge_types['Rent']
-        
         if not (rent_per_frequency and no_payments and rent_charge):
-            print("Skipping rent schedule generation: missing rent_per_frequency, no_payments, or rent_charge")
             return schedules
 
         try:
-            print(f"Generating rent schedule: rent_per_frequency={rent_per_frequency}, no_payments={no_payments}")
-            rent_tax = self._calculate_tax(rent_per_frequency, rent_charge, validated_data['first_rent_due_on'])
-            print(f"Rent tax: {rent_tax}")
+            rent_tax, tax_details = self._calculate_tax(rent_per_frequency, rent_charge, validated_data['first_rent_due_on'])
             payment_frequency_months = validated_data['rental_months'] // no_payments if no_payments > 0 else 1
-            
             reason_map = {
                 1: 'Monthly Rent',
                 2: 'Bi-Monthly Rent',
@@ -1328,25 +1222,19 @@ class PaymentSchedulePreviewView(APIView):
                 12: 'Annual Rent'
             }
             reason = reason_map.get(payment_frequency_months, f'{payment_frequency_months}-Monthly Rent')
-            print(f"Rent schedule reason: {reason}")
 
             for i in range(no_payments):
                 due_date = validated_data['first_rent_due_on']
-                
                 if i > 0:
                     due_date_obj = datetime.strptime(validated_data['first_rent_due_on'], '%Y-%m-%d')
                     year = due_date_obj.year
                     month = due_date_obj.month + (i * payment_frequency_months)
-                    
                     while month > 12:
                         year += 1
                         month -= 12
-                        
                     due_date = due_date_obj.replace(year=year, month=month).strftime('%Y-%m-%d')
-                    print(f"Rent payment {i+1} due date: {due_date}")
 
                 total = rent_per_frequency + rent_tax
-                print(f"Rent payment {i+1} - Amount: {rent_per_frequency}, Tax: {rent_tax}, Total: {total}")
                 schedules.append({
                     'id': str(i + 3).zfill(2),
                     'charge_type': rent_charge,
@@ -1356,28 +1244,16 @@ class PaymentSchedulePreviewView(APIView):
                     'status': 'pending',
                     'amount': rent_per_frequency,
                     'tax': rent_tax,
-                    'total': total
+                    'total': total,
+                    'tax_details': tax_details
                 })
-                
         except Exception as e:
-            raise Exception(f"Error generating rent schedule: {str(e)}")
-            
+            raise Exception(f"Error generating rent schedule:“大租期表生成错误：{str(e)}")
         return schedules
 
     def post(self, request):
-        """
-        Handle POST request to generate payment schedule preview.
-        
-        Args:
-            request: Django REST framework request object
-            
-        Returns:
-            Response: JSON response with payment schedule data or error message
-        """
         try:
-            print(f"Received POST request with data: {request.data}")
             validated_data = self._validate_request_data(request.data)
-
             with transaction.atomic():
                 charge_types = self._ensure_charge_types(validated_data['company_id'])
 
@@ -1385,45 +1261,197 @@ class PaymentSchedulePreviewView(APIView):
             payment_schedules.extend(self._generate_deposit_schedule(validated_data, charge_types))
             payment_schedules.extend(self._generate_commission_schedule(validated_data, charge_types))
             payment_schedules.extend(self._generate_rent_schedule(validated_data, charge_types))
-            print(f"Generated payment schedules: {payment_schedules}")
 
             serializer = PaymentScheduleSerializer(payment_schedules, many=True)
-            
             return Response({
                 'success': True,
                 'message': 'Payment schedule preview generated successfully',
                 'payment_schedules': serializer.data
             }, status=status.HTTP_200_OK)
-
         except ValueError as e:
-            print(f"Validation error: {str(e)}")
             return Response({
                 'success': False,
                 'message': str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
-
         except Exception as e:
             error_message = f'Error generating payment schedule preview: {str(e)}'
-            print(error_message)
             return Response({
                 'success': False,
                 'message': error_message
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class AdditionalChargeTaxPreviewView(APIView):
+    """
+    Generate a preview of tax calculations for an additional charge.
+    
+    Request Method: POST
+    
+    Request Body Parameters:
+    - company (int, required): Company ID
+    - charge_type (int, required): Charge type ID
+    - amount (float/str, required): Charge amount
+    - due_date (str, required): Due date in YYYY-MM-DD format
+    
+    Response Format:
+    {
+        "success": bool,
+        "message": str,
+        "additional_charge": {
+            "id": str,
+            "charge_type": int,
+            "charge_type_name": str,
+            "reason": str,
+            "due_date": str,
+            "status": str,
+            "amount": decimal,
+            "tax": decimal,
+            "total": decimal,
+            "tax_details": [
+                {
+                    "tax_type": str,
+                    "tax_percentage": decimal,
+                    "tax_amount": decimal
+                }
+            ]
+        }
+    }
+    
+    Error Responses:
+    - 400: Missing required fields, invalid data types, or processing errors
+    - 500: Internal server errors
+    """
+
+    def _validate_request_data(self, data):
+        try:
+            required_fields = ['company', 'charge_type', 'amount', 'due_date']
+            missing_fields = [field for field in required_fields if not data.get(field)]
+            if missing_fields:
+                raise ValueError(f"Missing required fields: {', '.join(missing_fields)}")
+
+            try:
+                datetime.strptime(data['due_date'], '%Y-%m-%d')
+            except ValueError:
+                raise ValueError("Invalid date format for due_date. Expected YYYY-MM-DD")
+
+            validated_data = {
+                'company_id': int(data.get('company')),
+                'charge_type_id': int(data.get('charge_type')),
+                'amount': Decimal(str(data.get('amount'))),
+                'due_date': data.get('due_date'),
+                'reason': data.get('reason', 'Additional Charge')
+            }
+
+            if validated_data['amount'] < 0:
+                raise ValueError("Amount must be non-negative")
+
+            return validated_data
+        except (ValueError, TypeError, InvalidOperation) as e:
+            raise ValueError(f"Data validation error: {str(e)}")
+
+    def _calculate_tax(self, amount, charge, reference_date):
+        try:
+            tax_amount = Decimal('0.00')
+            tax_details = []
+            reference_date_obj = datetime.strptime(reference_date, '%Y-%m-%d').date()
+
+            taxes = charge.taxes.filter(
+                company=charge.company,
+                is_active=True,
+                applicable_from__lte=reference_date_obj,
+                applicable_to__gte=reference_date_obj
+            ) | charge.taxes.filter(
+                company=charge.company,
+                is_active=True,
+                applicable_from__lte=reference_date_obj,
+                applicable_to__isnull=True
+            )
+
+            for tax in taxes:
+                tax_percentage = Decimal(str(tax.tax_percentage))
+                tax_contribution = (amount * tax_percentage) / Decimal('100')
+                tax_amount += tax_contribution
+                tax_details.append({
+                    'tax_type': tax.tax_type,
+                    'tax_percentage': tax_percentage,
+                    'tax_amount': tax_contribution.quantize(Decimal('0.01'))
+                })
+
+            return tax_amount.quantize(Decimal('0.01')), tax_details
+        except Exception as e:
+            return Decimal('0.00'), []
+
+    def post(self, request):
+        try:
+            validated_data = self._validate_request_data(request.data)
+            
+            charge_type = Charges.objects.filter(
+                id=validated_data['charge_type_id'],
+                company_id=validated_data['company_id']
+            ).first()
+
+            if not charge_type:
+                return Response({
+                    'success': False,
+                    'message': f"Charge type with id {validated_data['charge_type_id']} not found"
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            tax_amount, tax_details = self._calculate_tax(
+                validated_data['amount'],
+                charge_type,
+                validated_data['due_date']
+            )
+            total = validated_data['amount'] + tax_amount
+
+            # Create a dictionary for preview instead of model instance
+            additional_charge_data = {
+                'id': str(uuid.uuid4()),  # Generate a unique temporary ID
+                'charge_type': charge_type.id,
+                'charge_type_name': charge_type.name,
+                'reason': validated_data['reason'],
+                'due_date': validated_data['due_date'],
+                'status': 'pending',
+                'amount': validated_data['amount'],
+                'tax': tax_amount,
+                'total': total,
+                'tax_details': tax_details
+            }
+
+            # Pass the dictionary directly to the serializer
+            serializer = AdditionalChargeSerializer(data=additional_charge_data)
+            if serializer.is_valid():
+                return Response({
+                    'success': True,
+                    'message': 'Additional charge tax preview generated successfully',
+                    'additional_charge': serializer.data
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    'success': False,
+                    'message': f"Serialization error: {serializer.errors}"
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+        except ValueError as e:
+            return Response({
+                'success': False,
+                'message': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            error_message = f'Error generating additional charge tax preview: {str(e)}'
+            return Response({
+                'success': False,
+                'message': error_message
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class TenancyCreateView(APIView):
     """Create a new tenancy with automatic payment schedule generation"""
     
     def post(self, request):
-        print("rrrrr",request.data)
         serializer = TenancyCreateSerializer(data=request.data)
         
         if serializer.is_valid():
-       
             tenancy = serializer.save()
-            
-
             detail_serializer = TenancyDetailSerializer(tenancy)
             
             return Response({
@@ -1437,7 +1465,6 @@ class TenancyCreateView(APIView):
             'message': 'Validation failed',
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
-
 
 class TenancyDetailView(APIView):
     """Get tenancy details with payment schedules"""
