@@ -1118,6 +1118,8 @@ class PaymentSchedulePreviewView(APIView):
             tax_details = []
             reference_date_obj = datetime.strptime(reference_date, '%Y-%m-%d').date() if reference_date else date.today()
 
+            print(f"Calculating tax for charge: {charge.name}, amount: {amount}, reference_date: {reference_date_obj}")
+
             taxes = charge.taxes.filter(
                 company=charge.company,
                 is_active=True,
@@ -1130,18 +1132,25 @@ class PaymentSchedulePreviewView(APIView):
                 applicable_to__isnull=True
             )
 
+            print(f"Found {taxes.count()} taxes for charge {charge.name}")
+
             for tax in taxes:
                 tax_percentage = Decimal(str(tax.tax_percentage))
                 tax_contribution = (amount * tax_percentage) / Decimal('100')
                 tax_amount += tax_contribution
                 tax_details.append({
                     'tax_type': tax.tax_type,
-                    'tax_percentage': tax_percentage,
-                    'tax_amount': tax_contribution.quantize(Decimal('0.01'))
+                    'tax_percentage': str(tax_percentage),  # Convert to string for serialization
+                    'tax_amount': str(tax_contribution.quantize(Decimal('0.01')))  # Convert to string
                 })
+                print(f"Tax: {tax.tax_type}, percentage: {tax_percentage}, contribution: {tax_contribution}")
+
+            if not taxes.exists():
+                print(f"No applicable taxes found for charge {charge.name} on {reference_date_obj}")
 
             return tax_amount.quantize(Decimal('0.01')), tax_details
         except Exception as e:
+            print(f"Error calculating tax for charge {charge.name}: {str(e)}")
             return Decimal('0.00'), []
 
     def _generate_deposit_schedule(self, validated_data, charge_types):
@@ -1231,7 +1240,7 @@ class PaymentSchedulePreviewView(APIView):
                     'tax_details': tax_details
                 })
         except Exception as e:
-            raise Exception(f"Error generating rent schedule:“大租期表生成错误：{str(e)}")
+            raise Exception(f"Error generating rent schedule: {str(e)}")
         return schedules
 
     def post(self, request):
@@ -1245,7 +1254,7 @@ class PaymentSchedulePreviewView(APIView):
             payment_schedules.extend(self._generate_commission_schedule(validated_data, charge_types))
             payment_schedules.extend(self._generate_rent_schedule(validated_data, charge_types))
 
-            serializer = PaymentScheduleSerializer(payment_schedules, many=True)
+            serializer = PaymentSchedulePreviewSerializer(payment_schedules, many=True)
             return Response({
                 'success': True,
                 'message': 'Payment schedule preview generated successfully',
@@ -1448,6 +1457,7 @@ class TenancyCreateView(APIView):
             'message': 'Validation failed',
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+
 
 class TenancyDetailView(APIView):
     """Get tenancy details with payment schedules"""
