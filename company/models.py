@@ -44,6 +44,66 @@ class Users(models.Model):
     def __str__(self):
         return self.name if self.name else "Unnamed User"
 
+class Taxes(models.Model):
+    user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='user_taxes', null=True, blank=True) 
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='company_taxes', null=True, blank=True) 
+    tax_type = models.CharField(max_length=100)  
+    tax_percentage = models.DecimalField(max_digits=5, decimal_places=2)
+    country = models.ForeignKey(Country, on_delete=models.CASCADE, related_name='taxes_c')
+    state = models.ForeignKey(State, on_delete=models.CASCADE, related_name='taxes_state', null=True, blank=True)
+    applicable_from = models.DateField(null=True, blank=True)
+    applicable_to = models.DateField(null=True, blank=True)
+    
+    # New fields for versioning
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        # Ensure uniqueness per company for active tax types
+        constraints = [
+            models.UniqueConstraint(
+                fields=['company', 'tax_type'],
+                condition=models.Q(is_active=True, applicable_to__isnull=True),
+                name='unique_active_tax_per_company'
+            )
+        ]
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.tax_type} ({self.tax_percentage}%) - {self.applicable_from} to {self.applicable_to or 'Current'}"
+
+    def close_tax_period(self, end_date=None):
+        """Close the current tax period by setting applicable_to date"""
+        if end_date is None:
+            end_date = date.today()
+        self.applicable_to = end_date
+        self.is_active = False
+        self.save()
+
+    @classmethod
+    def get_active_tax(cls, company, tax_type, effective_date=None):
+        """Get the active tax rate for a specific date"""
+        if effective_date is None:
+            effective_date = date.today()
+        
+        return cls.objects.filter(
+            company=company,
+            tax_type=tax_type,
+            applicable_from__lte=effective_date
+        ).filter(
+            models.Q(applicable_to__isnull=True) | models.Q(applicable_to__gte=effective_date)
+        ).first()
+
+    @classmethod
+    def get_tax_history(cls, company, tax_type):
+        """Get complete history of a tax type for a company"""
+        return cls.objects.filter(
+            company=company,
+            tax_type=tax_type
+        ).order_by('applicable_from')
+
+
 class MasterDocumentType(models.Model):
     user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='user_comp', null=True, blank=True) 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='mas_type_comp', null=True, blank=True) 
@@ -286,6 +346,7 @@ class Charges(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='charges_comp', null=True, blank=True) 
     name = models.CharField(max_length=100, null=True, blank=True)
     charge_code = models.ForeignKey(ChargeCode, on_delete=models.SET_NULL, null=True, blank=True, related_name='charge_code_comp') 
+    taxes = models.ManyToManyField(Taxes, related_name='charges_taxes',blank=True)
     vat_percentage = models.FloatField(null=True, blank=True)  
     created_at = models.DateTimeField(auto_now_add=True)
     
@@ -443,62 +504,3 @@ class AdditionalCharge(models.Model):
     def __str__(self):
         return f"{self.tenancy} - {self.charge_type} - Due: {self.due_date}"
 
-
-class Taxes(models.Model):
-    user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='user_taxes', null=True, blank=True) 
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='company_taxes', null=True, blank=True) 
-    tax_type = models.CharField(max_length=100)  
-    tax_percentage = models.DecimalField(max_digits=5, decimal_places=2)
-    country = models.ForeignKey(Country, on_delete=models.CASCADE, related_name='taxes_c')
-    state = models.ForeignKey(State, on_delete=models.CASCADE, related_name='taxes_state', null=True, blank=True)
-    applicable_from = models.DateField(null=True, blank=True)
-    applicable_to = models.DateField(null=True, blank=True)
-    
-    # New fields for versioning
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        # Ensure uniqueness per company for active tax types
-        constraints = [
-            models.UniqueConstraint(
-                fields=['company', 'tax_type'],
-                condition=models.Q(is_active=True, applicable_to__isnull=True),
-                name='unique_active_tax_per_company'
-            )
-        ]
-        ordering = ['-created_at']
-
-    def __str__(self):
-        return f"{self.tax_type} ({self.tax_percentage}%) - {self.applicable_from} to {self.applicable_to or 'Current'}"
-
-    def close_tax_period(self, end_date=None):
-        """Close the current tax period by setting applicable_to date"""
-        if end_date is None:
-            end_date = date.today()
-        self.applicable_to = end_date
-        self.is_active = False
-        self.save()
-
-    @classmethod
-    def get_active_tax(cls, company, tax_type, effective_date=None):
-        """Get the active tax rate for a specific date"""
-        if effective_date is None:
-            effective_date = date.today()
-        
-        return cls.objects.filter(
-            company=company,
-            tax_type=tax_type,
-            applicable_from__lte=effective_date
-        ).filter(
-            models.Q(applicable_to__isnull=True) | models.Q(applicable_to__gte=effective_date)
-        ).first()
-
-    @classmethod
-    def get_tax_history(cls, company, tax_type):
-        """Get complete history of a tax type for a company"""
-        return cls.objects.filter(
-            company=company,
-            tax_type=tax_type
-        ).order_by('applicable_from')
