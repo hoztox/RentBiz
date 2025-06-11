@@ -1123,8 +1123,6 @@ class PaymentSchedulePreviewView(APIView):
                 raise ValueError("Rental months must be greater than 0")
             if validated_data['no_payments'] < 0:
                 raise ValueError("Number of payments cannot be negative")
-            if validated_data['no_payments'] > validated_data['rental_months']:
-                raise ValueError("Number of payments cannot exceed rental months")
 
             return validated_data
         except (ValueError, TypeError) as e:
@@ -1217,13 +1215,25 @@ class PaymentSchedulePreviewView(APIView):
         schedules = []
         rent_per_frequency = validated_data['rent_per_frequency']
         no_payments = validated_data['no_payments']
+        rental_months = validated_data['rental_months']
         rent_charge = charge_types['Rent']
         if not (rent_per_frequency and no_payments and rent_charge):
             return schedules
 
         try:
-            rent_tax, tax_details = self._calculate_tax(rent_per_frequency, rent_charge, validated_data['first_rent_due_on'])
-            payment_frequency_months = validated_data['rental_months'] // no_payments if no_payments > 0 else 1
+            # Calculate total rent amount
+            total_rent = rent_per_frequency * rental_months
+            # Calculate rent amount per payment
+            if no_payments > 0:
+                rent_per_payment = total_rent / no_payments
+            else:
+                rent_per_payment = total_rent  # If no_payments is 0, treat as single payment
+
+            # Calculate tax based on rent per payment
+            rent_tax, tax_details = self._calculate_tax(rent_per_payment, rent_charge, validated_data['first_rent_due_on'])
+
+            # Determine payment frequency in months
+            payment_frequency_months = rental_months // no_payments if no_payments > 0 else rental_months
             reason_map = {
                 1: 'Monthly Rent',
                 2: 'Bi-Monthly Rent',
@@ -1233,7 +1243,7 @@ class PaymentSchedulePreviewView(APIView):
             }
             reason = reason_map.get(payment_frequency_months, f'{payment_frequency_months}-Monthly Rent')
 
-            for i in range(no_payments):
+            for i in range(max(1, no_payments)):  # Ensure at least one payment if no_payments is 0
                 due_date = validated_data['first_rent_due_on']
                 if i > 0:
                     due_date_obj = datetime.strptime(validated_data['first_rent_due_on'], '%Y-%m-%d')
@@ -1244,7 +1254,7 @@ class PaymentSchedulePreviewView(APIView):
                         month -= 12
                     due_date = due_date_obj.replace(year=year, month=month).strftime('%Y-%m-%d')
 
-                total = rent_per_frequency + rent_tax
+                total = rent_per_payment + rent_tax
                 schedules.append({
                     'id': str(i + 3).zfill(2),
                     'charge_type': rent_charge,
@@ -1252,9 +1262,9 @@ class PaymentSchedulePreviewView(APIView):
                     'reason': reason,
                     'due_date': due_date,
                     'status': 'pending',
-                    'amount': rent_per_frequency,
+                    'amount': rent_per_payment.quantize(Decimal('0.01')),
                     'tax': rent_tax,
-                    'total': total,
+                    'total': total.quantize(Decimal('0.01')),
                     'tax_details': tax_details
                 })
         except Exception as e:
