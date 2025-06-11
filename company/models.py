@@ -320,7 +320,7 @@ class Tenancy(models.Model):
     status = models.CharField(max_length=20, choices=status_choices, default='pending')
     
     deposit = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    commision = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    commission = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     remarks = models.TextField(null=True, blank=True)
     
     is_termination = models.BooleanField(default=False)
@@ -339,35 +339,49 @@ class Tenancy(models.Model):
         """Return how deep the renewal chain is (1 for first renewal, 2 for second, etc)."""
         renewal_number = 1
         current = self.previous_tenancy
-        while current and current.previous_tenancy:
-            renewal_number += 1
+        while current:
+            if current.previous_tenancy:
+                renewal_number += 1
             current = current.previous_tenancy
         return renewal_number
 
 
-
     def generate_tenancy_code(self):
+        if self.previous_tenancy:
+            # Go back to the original tenancy
+            original = self.previous_tenancy
+            while original.previous_tenancy:
+                original = original.previous_tenancy
 
-        existing_codes = Tenancy.objects.filter(tenancy_code__isnull=False)
+            base_code = original.tenancy_code
 
-        base_numbers = []
-        for code in existing_codes.values_list('tenancy_code', flat=True):
-            if code.startswith('#TC'):
+            # Count existing renewals of this base
+            renewal_count = Tenancy.objects.filter(
+                previous_tenancy__tenancy_code__startswith=base_code
+            ).count()
+
+            return f"{base_code}-{renewal_count + 1}"  # Start from 1
+        else:
+            # Generate a new base code like TC001
+            existing_codes = Tenancy.objects.filter(
+                tenancy_code__isnull=False,
+                previous_tenancy__isnull=True
+            )
+            base_numbers = []
+
+            for code in existing_codes.values_list('tenancy_code', flat=True):
                 base_part = code.split('-')[0]
                 try:
-                    number = int(base_part.replace('#TC', ''))
+                    number = int(base_part.replace('TC', '').replace('#TC', ''))
                     base_numbers.append(number)
                 except ValueError:
                     pass
 
-        next_base_number = (max(base_numbers) + 1) if base_numbers else 1
-        base_code = f"#TC{next_base_number:04d}"
-
-        if self.previous_tenancy:
-            renewal_number = self.get_renewal_number()
-            return f"{base_code}-{renewal_number}"
-        else:
+            next_base_number = (max(base_numbers) + 1) if base_numbers else 1
+            base_code = f"TC{next_base_number:03d}"
             return base_code
+
+
 
 
     def save(self, *args, **kwargs):
@@ -386,7 +400,6 @@ class Tenancy(models.Model):
 
 
 
-
 class PaymentSchedule(models.Model):
     tenancy = models.ForeignKey('Tenancy', on_delete=models.CASCADE, related_name='payment_schedules', null=True, blank=True)
     charge_type = models.ForeignKey('Charges', on_delete=models.CASCADE, related_name='char', null=True, blank=True)   
@@ -398,7 +411,9 @@ class PaymentSchedule(models.Model):
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='pending')   
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    # VAT will remove after testing
     vat = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    tax = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
 
   
@@ -419,7 +434,9 @@ class AdditionalCharge(models.Model):
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='pending')   
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    # VAT will remove after testing
     vat = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    tax = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
 
    
