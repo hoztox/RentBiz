@@ -14,8 +14,8 @@ urlpatterns = [
     path('users/<int:user_id>/', UserDetailAPIView.as_view(), name='user-detail'),
     path('user/<int:user_id>/details/', UserDetailView.as_view(), name='user-detail'),
     
-    
-    # Building Properties
+
+    # Building Properties                                                                           
     path('buildings/create/', BuildingCreateView.as_view(), name='building-create'),
     path('buildings/<int:pk>/', BuildingDetailView.as_view(), name='building-detail'),
     path('buildings/company/<int:company_id>/', BuildingByCompanyView.as_view(), name='building-by-company'),

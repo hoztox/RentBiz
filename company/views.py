@@ -214,9 +214,27 @@ class UserCreateAPIView(APIView):
 
 class UserListByCompanyAPIView(APIView):
     def get(self, request, company_id):
+        search_query = request.query_params.get('search', '').strip()
+        status_filter = request.query_params.get('status', '').strip().lower()
         users = Users.objects.filter(company_id=company_id)
-        serializer = UserSerializer(users, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        
+
+        if search_query:
+            users = users.filter(
+                Q( name__icontains= search_query) |
+                Q( username__icontains = search_query)   |
+                Q( user_role__icontains = search_query)|
+                Q( created_at__icontains = search_query)
+               
+
+            )
+
+        if status_filter in ['active','blocked']:
+            users = users.filter(status=status_filter)
+
+
+        return paginate_queryset(users, request, UserSerializer)
+    
     
     
  
