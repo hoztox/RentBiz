@@ -87,6 +87,12 @@ urlpatterns = [
     #Taxes
     path('taxes/<int:company_id>/<int:tax_id>/', TaxesAPIView.as_view(), name='taxes'),
     path('taxes/<int:company_id>/', TaxesAPIView.as_view(), name='taxes'),
+
+    # AdditionalCharge
+    path('additional-charges/', AdditionalChargeListView.as_view(), name='additional-charges-list'),
+    path('additional-charges/create/', AdditionalChargeCreateView.as_view(), name='additional-charges-create'),
+    path('additional-charges/<int:pk>/', AdditionalChargeUpdateView.as_view(), name='additional-charges-update'),
+    path('additional-charges/<int:pk>/delete/', AdditionalChargeDeleteView.as_view(), name='additional-charges-delete'),
     
 ]
 
