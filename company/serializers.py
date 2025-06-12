@@ -746,8 +746,6 @@ class TenancyListSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
- 
-
 class TenancyRenewalSerializer(serializers.ModelSerializer):
     additional_charges = AdditionalChargeSerializer(many=True, required=False)
     

@@ -978,7 +978,7 @@ class TenantDetailView(APIView):
         building.delete()
         return Response({'message': 'Building deleted'}, status=status.HTTP_204_NO_CONTENT)
 
-        
+
 class TenantByCompanyView(APIView):
     def get(self, request, company_id):
         buildings = Tenant.objects.filter(company__id=company_id)
@@ -2202,10 +2202,6 @@ class TaxCalculationHelper:
             applicable_from__lte=to_date
         ).order_by('applicable_from')
         
-        
-        
-
- 
 
 class TenancyHTMLPDFView(APIView):
     def get(self, request, tenancy_id):
@@ -2221,3 +2217,266 @@ class TenancyHTMLPDFView(APIView):
         if pisa_status.err:
             return HttpResponse("Error generating PDF", status=500)
         return response
+
+
+class AdditionalChargeListView(APIView):
+    """List all additional charges with optional filtering by tenancy or search term"""
+
+    def get(self, request):
+        try:
+            # Get query parameters
+            tenancy_id = request.query_params.get('tenancy_id', None)
+            search_term = request.query_params.get('search_term', '')
+
+            # Base queryset
+            queryset = AdditionalCharge.objects.select_related('tenancy', 'charge_type').all()
+
+            # Filter by tenancy_id if provided
+            if tenancy_id:
+                queryset = queryset.filter(tenancy__id=tenancy_id)
+
+            # Filter by search term across multiple fields
+            if search_term:
+                queryset = queryset.filter(
+                    Q(tenancy__id__icontains=search_term) |
+                    Q(charge_type__name__icontains=search_term) |
+                    Q(reason__icontains=search_term) |
+                    Q(due_date__icontains=search_term) |
+                    Q(status__icontains=search_term) |
+                    Q(amount__icontains=search_term)
+                )
+
+            # Serialize the data
+            serializer = AdditionalChargeGetSerializer(queryset, many=True)
+
+            return Response({
+                'success': True,
+                'message': 'Additional charges retrieved successfully',
+                'data': serializer.data,
+                'count': queryset.count()
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error retrieving additional charges: {str(e)}',
+                'data': []
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdditionalChargeCreateView(APIView):
+    """Create a new additional charge"""
+    # permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            data = request.data
+            tenancy_id = data.get('tenancy')
+            charge_type_id = data.get('charge_type')
+            reason = data.get('reason')
+            due_date = data.get('due_date')
+            amount = data.get('amount')
+            tax = data.get('tax', '0.00')
+            charge_status = data.get('status', 'pending')  # Rename to avoid conflict
+
+            # Validate required fields
+            if not all([tenancy_id, charge_type_id, reason, due_date, amount, charge_status]):
+                return Response({
+                    'success': False,
+                    'message': 'All required fields (tenancy, charge_type, reason, due_date, amount, status) must be provided'
+                }, status=status.HTTP_400_BAD_REQUEST)  # Use status module
+
+            # Fetch related objects
+            try:
+                tenancy = Tenancy.objects.get(id=tenancy_id)
+                charge_type = Charges.objects.get(id=charge_type_id)
+            except Tenancy.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'message': f'Tenancy with id {tenancy_id} not found'
+                }, status=status.HTTP_404_NOT_FOUND)  # Use status module
+            except Charges.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'message': f'Charge type with id {charge_type_id} not found'
+                }, status=status.HTTP_404_NOT_FOUND)  # Use status module
+
+            # Calculate total
+            amount_decimal = Decimal(str(amount))
+            tax_decimal = Decimal(str(tax))
+            total = amount_decimal + tax_decimal
+
+            # Create additional charge
+            with transaction.atomic():
+                additional_charge = AdditionalCharge.objects.create(
+                    tenancy=tenancy,
+                    charge_type=charge_type,
+                    reason=reason,
+                    due_date=due_date,
+                    status=charge_status,  # Use renamed variable
+                    amount=amount_decimal,
+                    tax=tax_decimal,
+                    total=total
+                )
+
+            serializer = AdditionalChargeGetSerializer(additional_charge)
+            return Response({
+                'success': True,
+                'message': 'Additional charge created successfully',
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)  # Use status module
+
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error creating additional charge: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  # Use status module
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status  # Add this import
+from django.db import transaction
+from decimal import Decimal
+from .models import AdditionalCharge, Tenancy, Charges
+from .serializers import AdditionalChargeGetSerializer
+
+class AdditionalChargeUpdateView(APIView):
+    """Update an existing additional charge"""
+    # permission_classes = [IsAuthenticated]
+
+    def put(self, request, pk):
+        try:
+            data = request.data
+            tenancy_id = data.get('tenancy')
+            charge_type_id = data.get('charge_type')
+            reason = data.get('reason')
+            due_date = data.get('due_date')
+            amount = data.get('amount')
+            tax = data.get('tax', '0.00')
+            status_field = data.get('status')  # Renamed to avoid conflict
+
+            # Validate required fields
+            if not all([tenancy_id, charge_type_id, reason, due_date, amount, status_field]):
+                return Response({
+                    'success': False,
+                    'message': 'All required fields (tenancy, charge_type, reason, due_date, amount, status) must be provided'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Fetch the additional charge
+            try:
+                additional_charge = AdditionalCharge.objects.get(pk=pk)
+            except AdditionalCharge.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'message': f'Additional charge with id {pk} not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            # Fetch related objects
+            try:
+                tenancy = Tenancy.objects.get(id=tenancy_id)
+                charge_type = Charges.objects.get(id=charge_type_id)
+            except Tenancy.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'message': f'Tenancy with id {tenancy_id} not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+            except Charges.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'message': f'Charge type with id {charge_type_id} not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            # Calculate total
+            amount_decimal = Decimal(str(amount))
+            tax_decimal = Decimal(str(tax))
+            total = amount_decimal + tax_decimal
+
+            # Update additional charge
+            with transaction.atomic():
+                additional_charge.tenancy = tenancy
+                additional_charge.charge_type = charge_type
+                additional_charge.reason = reason
+                additional_charge.due_date = due_date
+                additional_charge.status = status_field
+                additional_charge.amount = amount_decimal
+                additional_charge.tax = tax_decimal
+                additional_charge.total = total
+                additional_charge.save()
+
+            serializer = AdditionalChargeGetSerializer(additional_charge)
+            return Response({
+                'success': True,
+                'message': 'Additional charge updated successfully',
+                'data': serializer.data
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error updating additional charge: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdditionalChargeListView(APIView):
+    """List all additional charges with optional filtering by tenancy or search term"""
+    # permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            tenancy_id = request.query_params.get('tenancy_id', None)
+            search_term = request.query_params.get('search_term', '')
+
+            queryset = AdditionalCharge.objects.select_related('tenancy', 'charge_type').all()
+
+            if tenancy_id:
+                queryset = queryset.filter(tenancy__id=tenancy_id)
+
+            if search_term:
+                queryset = queryset.filter(
+                    Q(tenancy__id__icontains=search_term) |
+                    Q(charge_type__name__icontains=search_term) |
+                    Q(reason__icontains=search_term) |
+                    Q(due_date__icontains=search_term) |
+                    Q(status__icontains=search_term) |
+                    Q(amount__icontains=search_term)
+                )
+
+            serializer = AdditionalChargeGetSerializer(queryset, many=True)
+            return Response({
+                'success': True,
+                'message': 'Additional charges retrieved successfully',
+                'data': serializer.data,
+                'count': queryset.count()
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error retrieving additional charges: {str(e)}',
+                'data': []
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdditionalChargeDeleteView(APIView):
+    """Delete an additional charge by ID"""
+    # permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk):
+        try:
+            charge = AdditionalCharge.objects.get(pk=pk)
+            charge.delete()
+            return Response({
+                'success': True,
+                'message': 'Additional charge deleted successfully'
+            }, status=status.HTTP_204_NO_CONTENT)
+        except AdditionalCharge.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Additional charge not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error deleting additional charge: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
