@@ -333,16 +333,23 @@ class TenantSerializer(serializers.ModelSerializer):
             for doc_data in documents_data:
                 doc_id = doc_data.get('id')
                 existing_file_url = doc_data.pop('existing_file_url', None)
+
                 if doc_id and doc_id in existing_docs:
-                    # Update existing document
                     doc_instance = existing_docs[doc_id]
+
                     for attr, value in doc_data.items():
                         if attr != 'id':
                             if attr == 'upload_file':
+                                # If no new file uploaded, but existing file URL is provided
                                 if not value and existing_file_url:
-                                    # Simulate file path from existing_file_url
-                                    doc_instance.upload_file.name = existing_file_url.replace("/media/", "")
-                                    continue  # Skip regular setattr for 'upload_file'
+                                    # ✅ Normalize path to avoid media/media issue
+                                    cleaned_path = existing_file_url
+                                    if cleaned_path.startswith('/media/'):
+                                        cleaned_path = cleaned_path[len('/media/'):]
+                                    elif cleaned_path.startswith('media/'):
+                                        cleaned_path = cleaned_path[len('media/'):]
+                                    doc_instance.upload_file.name = cleaned_path
+                                    continue  # Skip normal set
                             setattr(doc_instance, attr, value)
 
                     doc_instance.save()
@@ -352,16 +359,22 @@ class TenantSerializer(serializers.ModelSerializer):
                     doc_data_copy = doc_data.copy()
                     doc_data_copy.pop('id', None)
                     if existing_file_url and not doc_data_copy.get('upload_file'):
-                        doc_data_copy['upload_file'] = existing_file_url
+                        cleaned_path = existing_file_url
+                        if cleaned_path.startswith('/media/'):
+                            cleaned_path = cleaned_path[len('/media/'):]
+                        elif cleaned_path.startswith('media/'):
+                            cleaned_path = cleaned_path[len('media/'):]
+                        doc_data_copy['upload_file'] = cleaned_path
                     new_doc = TenantDocumentType.objects.create(tenant=instance, **doc_data_copy)
                     processed_doc_ids.append(new_doc.id)
 
-            # Delete documents that are not in the processed list
+            # Delete unprocessed documents
             for doc_id, doc_instance in existing_docs.items():
                 if doc_id not in processed_doc_ids:
                     doc_instance.delete()
 
         return instance
+
 
 class ChargeCodeSerializer(serializers.ModelSerializer):
     class Meta:
