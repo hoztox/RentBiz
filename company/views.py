@@ -877,12 +877,6 @@ class CurrencyByCompanyAPIView(APIView):
         return Response(serializer.data)
 
 
- 
-
-
- 
- 
-
 class TenantCreateView(APIView):
     def post(self, request):
         print("Raw request data:", request.data)
@@ -923,48 +917,53 @@ class TenantCreateView(APIView):
 
     
 class TenantDetailView(APIView):
-
     def get_object(self, pk):
         try:
             return Tenant.objects.get(pk=pk)
         except Tenant.DoesNotExist:
             return None
-
     def get(self, request, pk):
         tenant = self.get_object(pk)
         if not tenant:
             return Response({'error': 'Tenant not found'}, status=status.HTTP_404_NOT_FOUND)
         serializer = TenantGetSerializer(tenant)
         return Response(serializer.data)
-
     def put(self, request, pk):
         print("Raw data:", request.data)
         tenant = self.get_object(pk)
         if not tenant:
             return Response({'error': 'Tenant not found'}, status=status.HTTP_404_NOT_FOUND)
-
+        # Transform FormData into nested JSON structure
         tenant_data = {}
-        excluded_keys = ['id', 'doc_type', 'number', 'issued_date', 'expiry_date']
+        tenant_comp = []
+        comp_index = 0
+        # Extract tenant fields
         for key, value in request.data.items():
-            if key not in excluded_keys and not key.startswith('document_file_'):
-                tenant_data[key] = value
-
-        # Build document data
-        doc_data = {
-            'id': request.data.get('id'),
-            'doc_type': request.data.get('doc_type'),
-            'number': request.data.get('number'),
-            'issued_date': request.data.get('issued_date'),
-            'expiry_date': request.data.get('expiry_date'),
-        }
-
-        if 'document_file_0' in request.FILES:
-            doc_data['upload_file'] = request.FILES['document_file_0']
-
-        tenant_data['tenant_comp'] = [doc_data]
-
+            if not key.startswith('tenant_comp'):
+                # Handle QueryDict lists (e.g., company: ['4', '4'] -> '4')
+                tenant_data[key] = value[0] if isinstance(value, list) and len(value) == 1 else value
+        # Extract tenant_comp fields (place the provided snippet here)
+        while f'tenant_comp[{comp_index}][doc_type]' in request.data:
+            doc_data = {
+                'doc_type': request.data.get(f'tenant_comp[{comp_index}][doc_type]'),
+                'number': request.data.get(f'tenant_comp[{comp_index}][number]'),
+                'issued_date': request.data.get(f'tenant_comp[{comp_index}][issued_date]'),
+                'expiry_date': request.data.get(f'tenant_comp[{comp_index}][expiry_date]'),
+                'id': request.data.get(f'tenant_comp[{comp_index}][id]'),  # Include document ID if provided
+            }
+            file_key = f'tenant_comp[{comp_index}][upload_file]'
+            existing_file_key = f'tenant_comp[{comp_index}][existing_file_url]'
+            if file_key in request.FILES:
+                doc_data['upload_file'] = request.FILES[file_key]
+            elif file_key in request.data:
+                doc_data['upload_file'] = request.data.get(file_key)
+            elif existing_file_key in request.data:
+                doc_data['existing_file_url'] = request.data.get(existing_file_key)
+            tenant_comp.append(doc_data)
+            comp_index += 1
+        if tenant_comp:
+            tenant_data['tenant_comp'] = tenant_comp
         print("Processed tenant data:", tenant_data)
-
         serializer = TenantSerializer(tenant, data=tenant_data, partial=True)
         if serializer.is_valid():
             serializer.save()
@@ -972,15 +971,14 @@ class TenantDetailView(APIView):
             return Response(serializer.data)
         print("Serializer errors:", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
     def delete(self, request, pk):
         building = self.get_object(pk)
         if not building:
             return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
         building.delete()
         return Response({'message': 'Building deleted'}, status=status.HTTP_204_NO_CONTENT)
-    
+
+        
 class TenantByCompanyView(APIView):
     def get(self, request, company_id):
         buildings = Tenant.objects.filter(company__id=company_id)
