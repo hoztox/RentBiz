@@ -266,76 +266,94 @@ class CurrencySerializer(serializers.ModelSerializer):
         model = Currency
         fields = '__all__'
         
-
 class TenantDocumentTypeSerializer(serializers.ModelSerializer):
+    doc_type = serializers.PrimaryKeyRelatedField(queryset=MasterDocumentType.objects.all(), required=True)
+    number = serializers.CharField(allow_blank=True, required=False)
+    issued_date = serializers.DateField(allow_null=True, required=False)
+    expiry_date = serializers.DateField(allow_null=True, required=False)
+    upload_file = serializers.FileField(allow_null=True, required=False)
+    existing_file_url = serializers.CharField(write_only=True, required=False, allow_blank=True)
     class Meta:
         model = TenantDocumentType
-        fields = '__all__'  
-
-
+        fields = [
+            'id',
+            'doc_type',
+            'number',
+            'issued_date',
+            'expiry_date',
+            'upload_file',
+            'existing_file_url',
+        ]
 class TenantGetSerializer(serializers.ModelSerializer):
     user = UserSerializer()
     id_type = IDTypeSerializer()
     sponser_id_type = IDTypeSerializer()
-    tenant_comp = TenantDocumentTypeSerializer(many=True, required=False) 
-    
+    tenant_comp = TenantDocumentTypeSerializer(many=True, required=False)
     class Meta:
         model = Tenant
-        fields = '__all__'  
-      
+        fields = '__all__'
 class TenantSerializer(serializers.ModelSerializer):
-    tenant_comp = TenantDocumentTypeSerializer(many=True, required=False) 
- 
-
+    tenant_comp = TenantDocumentTypeSerializer(many=True, required=False)
     class Meta:
         model = Tenant
-        fields = '__all__'  
-
+        fields = '__all__'
     def create(self, validated_data):
         documents_data = validated_data.pop('tenant_comp', [])
-        building = Tenant.objects.create(**validated_data)
+        tenant = Tenant.objects.create(**validated_data)
         for doc_data in documents_data:
-            TenantDocumentType.objects.create(tenant=building, **doc_data)
-            return building
+            existing_file_url = doc_data.pop('existing_file_url', None)
+            if existing_file_url and not doc_data.get('upload_file'):
+                doc_data['upload_file'] = existing_file_url
+            TenantDocumentType.objects.create(tenant=tenant, **doc_data)
+        return tenant
     def update(self, instance, validated_data):
         documents_data = validated_data.pop('tenant_comp', None)
-
         # Update tenant fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
-
         if documents_data is not None:
-            # Get existing documents with their IDs
             existing_docs = {doc.id: doc for doc in instance.tenant_comp.all()}
             processed_doc_ids = []
-
             for doc_data in documents_data:
                 doc_id = doc_data.get('id')
-                
+                existing_file_url = doc_data.pop('existing_file_url', None)
                 if doc_id and doc_id in existing_docs:
-                    # Update existing document
                     doc_instance = existing_docs[doc_id]
                     for attr, value in doc_data.items():
                         if attr != 'id':
+                            if attr == 'upload_file':
+                                # If no new file uploaded, but existing file URL is provided
+                                if not value and existing_file_url:
+                                    # :white_tick: Normalize path to avoid media/media issue
+                                    cleaned_path = existing_file_url
+                                    if cleaned_path.startswith('/media/'):
+                                        cleaned_path = cleaned_path[len('/media/'):]
+                                    elif cleaned_path.startswith('media/'):
+                                        cleaned_path = cleaned_path[len('media/'):]
+                                    doc_instance.upload_file.name = cleaned_path
+                                    continue  # Skip normal set
                             setattr(doc_instance, attr, value)
                     doc_instance.save()
                     processed_doc_ids.append(doc_id)
                 else:
-                    # Create new document (remove 'id' if it exists but doesn't match existing)
+                    # Create new document
                     doc_data_copy = doc_data.copy()
-                    doc_data_copy.pop('id', None)  # Remove id for new documents
+                    doc_data_copy.pop('id', None)
+                    if existing_file_url and not doc_data_copy.get('upload_file'):
+                        cleaned_path = existing_file_url
+                        if cleaned_path.startswith('/media/'):
+                            cleaned_path = cleaned_path[len('/media/'):]
+                        elif cleaned_path.startswith('media/'):
+                            cleaned_path = cleaned_path[len('media/'):]
+                        doc_data_copy['upload_file'] = cleaned_path
                     new_doc = TenantDocumentType.objects.create(tenant=instance, **doc_data_copy)
                     processed_doc_ids.append(new_doc.id)
-
-            # Delete documents that are not in PaymentScheduleSerializerthe updated list
+            # Delete unprocessed documents
             for doc_id, doc_instance in existing_docs.items():
                 if doc_id not in processed_doc_ids:
                     doc_instance.delete()
-
         return instance
-
-
 
 
 class ChargeCodeSerializer(serializers.ModelSerializer):
