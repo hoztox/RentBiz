@@ -179,7 +179,6 @@ class UnitGetSerializer(serializers.ModelSerializer):
     class Meta:
         model = Units
         fields = '__all__'
-
 class UnitSerializer(serializers.ModelSerializer):
     unit_comp = UnitDocumentTypeSerializer(many=True, required=False)
 
@@ -188,14 +187,15 @@ class UnitSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def create(self, validated_data):
+        print("Creating unit with validated_data:", validated_data)
         documents_data = validated_data.pop('unit_comp', [])
         unit = Units.objects.create(**validated_data)
         for doc_data in documents_data:
             UnitDocumentType.objects.create(unit=unit, **doc_data)
         return unit
-        
+
     def update(self, instance, validated_data):
-        print(f"Serializer update called with validated_data: {validated_data}")
+        print("Serializer update called with validated_data:", validated_data)
         
         documents_data = validated_data.pop('unit_comp', None)
         print(f"Documents data extracted: {documents_data}")
@@ -207,6 +207,7 @@ class UnitSerializer(serializers.ModelSerializer):
         instance.save()
         print("Main unit instance saved")
 
+        # Only process documents if documents_data is explicitly provided
         if documents_data is not None:
             existing_docs = {doc.id: doc for doc in instance.unit_comp.all()}
             print(f"Existing documents: {list(existing_docs.keys())}")
@@ -215,40 +216,62 @@ class UnitSerializer(serializers.ModelSerializer):
             for doc_data in documents_data:
                 print(f"Processing document data: {doc_data}")
                 doc_id = doc_data.get('id')
-                
+                print(f"Document ID from frontend: {doc_id} (type: {type(doc_id)})")
+
+                try:
+                    doc_id = int(doc_id) if doc_id is not None else None
+                except (ValueError, TypeError):
+                    doc_id = None
+
                 if doc_id and doc_id in existing_docs:
+                    # Update existing document
                     doc_instance = existing_docs[doc_id]
-                    print(f"Updating existing document {doc_id}")
-                    
-                    for attr, value in doc_data.items():
-                        if attr == 'upload_file':
-                            if value and hasattr(value, 'read'):
-                                print(f"Setting file {value.name} on document {doc_id}")
-                                setattr(doc_instance, attr, value)
+                    if 'upload_file' in doc_data:
+                        upload_file = doc_data['upload_file']
+                        if upload_file and hasattr(upload_file, 'read'):
+                            print(f"New file uploaded for document {doc_id}: {upload_file.name}")
+                            doc_instance.upload_file = upload_file
+                        elif upload_file is None:
+                            if doc_data.get('explicit_remove', False):
+                                print(f"Explicitly removing file from document {doc_id}")
+                                doc_instance.upload_file = None
                             else:
-                                print(f"No valid file found for document {doc_id}, value: {value}")
+                                print(f"Preserving existing file for document {doc_id}: {doc_instance.upload_file}")
                         else:
+                            print(f"Unrecognized upload_file format for document {doc_id}, preserving existing file")
+                    else:
+                        print(f"No upload_file key in doc_data, preserving existing file for document {doc_id}")
+
+                    for attr, value in doc_data.items():
+                        if attr not in ['upload_file', 'id', 'explicit_remove']:
                             setattr(doc_instance, attr, value)
-                    
+
                     doc_instance.save()
-                    print(f"Document {doc_id} saved with file: {doc_instance.upload_file}")
                     updated_ids.append(doc_id)
                 else:
-                    print(f"Creating new document with data: {doc_data}")
-                    new_doc = UnitDocumentType.objects.create(unit=instance, **doc_data)
-                    print(f"New document created with ID: {new_doc.id}, file: {new_doc.upload_file}")
+                    # Create new document
+                    create_data = doc_data.copy()
+                    create_data.pop('id', None)
+                    create_data.pop('explicit_remove', None)
 
-            # Delete documents not in the update
+                    upload_file = create_data.get('upload_file')
+                    if upload_file and not hasattr(upload_file, 'read'):
+                        create_data['upload_file'] = None
+
+                    new_doc = UnitDocumentType.objects.create(unit=instance, **create_data)
+                    print(f"New document created with ID: {new_doc.id}, file: {new_doc.upload_file}")
+                    updated_ids.append(new_doc.id)
+
+            # Delete documents not in updated_ids
             for doc_id in existing_docs:
                 if doc_id not in updated_ids:
                     print(f"Deleting document {doc_id}")
                     existing_docs[doc_id].delete()
+        else:
+            print("No unit_comp data provided; preserving existing documents")
 
         print("Serializer update completed")
         return instance
-
-    
-
 class MasterDocumentTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = MasterDocumentType
@@ -268,7 +291,7 @@ class CurrencySerializer(serializers.ModelSerializer):
         
 class TenantDocumentTypeSerializer(serializers.ModelSerializer):
     doc_type = serializers.PrimaryKeyRelatedField(queryset=MasterDocumentType.objects.all(), required=True)
-    number = serializers.CharField(allow_blank=True, required=False)
+    number = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     issued_date = serializers.DateField(allow_null=True, required=False)
     expiry_date = serializers.DateField(allow_null=True, required=False)
     upload_file = serializers.FileField(allow_null=True, required=False)
