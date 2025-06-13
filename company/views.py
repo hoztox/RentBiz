@@ -25,7 +25,7 @@ from django.utils import timezone
 import json
 from datetime import date
 from django.template.loader import get_template
- 
+from django.core.exceptions import ObjectDoesNotExist
 from xhtml2pdf import pisa
 from io import BytesIO
  
@@ -1491,7 +1491,7 @@ class TenancyDetailView(APIView):
     def get(self, request, pk):
         try:
             tenancy = Tenancy.objects.select_related('tenant', 'building', 'unit').get(pk=pk)
-            serializer = TenancyDetailSerializer(tenancy)
+            serializer = TenancyListSerializer(tenancy)
             
             return Response({
                 'success': True,
@@ -2480,3 +2480,111 @@ class AdditionalChargeDeleteView(APIView):
                 'success': False,
                 'message': f'Error deleting additional charge: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            
+ 
+class CreateInvoiceAPIView(APIView):
+    def post(self, request):
+        print("Request data:", request.data)
+        serializer = InvoiceSerializer(data=request.data)
+        if serializer.is_valid():
+            invoice = serializer.save()
+            print("Created invoice:", {
+                'id': invoice.id,
+                'invoice_number': invoice.invoice_number,
+                'company': invoice.company_id,
+                'user': invoice.user_id,
+                'total_amount': str(invoice.total_amount),
+                'status': invoice.status
+            })
+            return Response({
+                'success': True,
+                'message': 'Invoice created successfully',
+                'invoice': {
+                    'id': invoice.id,
+                    'invoice_number': invoice.invoice_number,
+                    'total_amount': str(invoice.total_amount),
+                    'status': invoice.status
+                }
+            }, status=status.HTTP_201_CREATED)
+        print("Serializer errors:", serializer.errors)
+        return Response({
+            'success': False,
+            'message': 'Failed to create invoice',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+class GetInvoicesByCompanyAPIView(APIView):
+    def get(self, request, company_id):
+        try:
+          
+            invoices = Invoice.objects.filter(company__id=company_id)
+            
+            if not invoices.exists():
+                return Response({
+                    'success': True,
+                    'message': 'No invoices found for this company',
+                    'data': []
+                }, status=status.HTTP_200_OK)
+
+        
+            serializer = InvoiceGetSerializer(invoices, many=True)
+            
+            return Response({
+                'success': True,
+                'message': 'Invoices retrieved successfully',
+                'data': serializer.data
+            }, status=status.HTTP_200_OK)
+            
+        except ObjectDoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Company not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error retrieving invoices: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            
+ 
+
+
+
+class DeleteInvoiceAPIView(APIView):
+    def delete(self, request, invoice_id):
+        try:
+            invoice = Invoice.objects.get(id=invoice_id)
+            invoice_number = invoice.invoice_number  
+            invoice.delete()
+            return Response({
+                'success': True,
+                'message': f'Invoice {invoice_number} deleted successfully'
+            }, status=status.HTTP_200_OK)
+        except ObjectDoesNotExist:
+            return Response({
+                'success': False,
+                'message': f'Invoice with ID {invoice_id} not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error deleting invoice: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            
+            
+class InvoiceDetailView(APIView):
+    def get_object(self, pk):
+        try:
+            return Invoice.objects.get(pk=pk)
+        except Invoice.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        invoice = self.get_object(pk)
+        if not invoice:
+            return Response({'error': 'Invoice not found'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = InvoiceGetSerializer(invoice)
+        return Response(serializer.data, status=status.HTTP_200_OK)

@@ -6,6 +6,9 @@ from decimal import Decimal
 from datetime import datetime, timedelta,date
 from django.db import transaction
 
+from django.core.exceptions import ValidationError
+
+
 class UserSerializer(serializers.ModelSerializer):
     confirm_password = serializers.CharField(write_only=True)    
     company_id = serializers.IntegerField(write_only=True, required=True)
@@ -941,3 +944,140 @@ class TaxesSerializer(serializers.ModelSerializer):
 
     def get_state_name(self, obj):
         return obj.state.name if obj.state else None
+
+ 
+
+
+
+ 
+
+
+class InvoiceItemSerializer(serializers.Serializer):
+    charge_type = serializers.CharField(max_length=255)
+    description = serializers.CharField(max_length=255)
+    due_date = serializers.DateField()
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+    tax = serializers.DecimalField(max_digits=12, decimal_places=2)
+    total = serializers.DecimalField(max_digits=15, decimal_places=2)
+    type = serializers.ChoiceField(choices=['payment_schedule', 'additional_charge'])
+    schedule_id = serializers.IntegerField(required=False)
+    charge_id = serializers.IntegerField(required=False)
+    company = serializers.IntegerField(required=False)
+    user = serializers.IntegerField(required=False)
+
+
+class InvoiceSerializer(serializers.ModelSerializer):
+    tenancy = serializers.PrimaryKeyRelatedField(queryset=Tenancy.objects.all())
+    company = serializers.PrimaryKeyRelatedField(queryset=Company.objects.all(), allow_null=True, required=False)
+    user = serializers.PrimaryKeyRelatedField(queryset=Users.objects.all(), allow_null=True, required=False)
+    invoice_date = serializers.DateField(source='in_date', allow_null=True, required=False)
+    end_date = serializers.DateField(allow_null=True, required=False)
+    building_name = serializers.CharField(max_length=255)
+    unit_name = serializers.CharField(max_length=255)
+    items = InvoiceItemSerializer(many=True)
+    total_amount = serializers.DecimalField(max_digits=15, decimal_places=2)
+
+    # Return nested M2M relations
+    payment_schedules = PaymentScheduleSerializer(many=True, read_only=True)
+    additional_charges = AdditionalChargeSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Invoice
+        fields = [
+            'id', 'tenancy', 'invoice_date', 'end_date', 'building_name', 'unit_name',
+            'items', 'total_amount', 'company', 'user',
+            'payment_schedules', 'additional_charges'
+        ]
+
+    def validate(self, data):
+        tenancy = data.get('tenancy')
+        if not tenancy:
+            raise serializers.ValidationError({"tenancy": "Tenancy is required."})
+
+        items = data.get('items', [])
+        if not items:
+            raise serializers.ValidationError({"items": "At least one item is required."})
+
+        calculated_total = sum(item['total'] for item in items)
+        if calculated_total != data.get('total_amount'):
+            raise serializers.ValidationError({
+                "total_amount": f"Total amount ({calculated_total}) does not match the provided total ({data.get('total_amount')})."
+            })
+
+        invoice_date = data.get('in_date')
+        if invoice_date == '':
+            data['in_date'] = None
+
+        end_date = data.get('end_date')
+        if end_date == '':
+            data['end_date'] = None
+
+        return data
+
+    def create(self, validated_data):
+        with transaction.atomic():
+            items_data = validated_data.pop('items')
+            company = validated_data.pop('company', None)
+            user = validated_data.pop('user', None)
+
+            invoice = Invoice.objects.create(
+                tenancy=validated_data['tenancy'],
+                in_date=validated_data.get('in_date'),
+                end_date=validated_data.get('end_date'),
+                total_amount=validated_data['total_amount'],
+                invoice_number=self.generate_invoice_number(),
+                company=company,
+                user=user
+            )
+
+            payment_schedule_ids = []
+            additional_charge_ids = []
+
+            for item in items_data:
+                if item['type'] == 'payment_schedule' and item.get('schedule_id'):
+                    try:
+                        schedule = PaymentSchedule.objects.get(id=item['schedule_id'], tenancy=invoice.tenancy)
+                        schedule.status = 'invoice'
+                        schedule.save()
+                        payment_schedule_ids.append(schedule.id)
+                    except PaymentSchedule.DoesNotExist:
+                        raise ValidationError(f"PaymentSchedule ID {item['schedule_id']} not found or invalid.")
+                elif item['type'] == 'additional_charge' and item.get('charge_id'):
+                    try:
+                        charge = AdditionalCharge.objects.get(id=item['charge_id'], tenancy=invoice.tenancy)
+                        charge.status = 'invoice'
+                        charge.save()
+                        additional_charge_ids.append(charge.id)
+                    except AdditionalCharge.DoesNotExist:
+                        raise ValidationError(f"AdditionalCharge ID {item['charge_id']} not found or invalid.")
+
+            # Set many-to-many fields
+            if payment_schedule_ids:
+                invoice.payment_schedules.set(payment_schedule_ids)
+            if additional_charge_ids:
+                invoice.additional_charges.set(additional_charge_ids)
+
+            return invoice
+
+    def generate_invoice_number(self):
+        current_year = datetime.now().strftime('%y')
+        last_invoice = Invoice.objects.filter(
+            invoice_number__startswith=f'INV{current_year}'
+        ).order_by('-invoice_number').first()
+
+        if last_invoice:
+            last_sequence = int(last_invoice.invoice_number[-4:])
+            new_sequence = last_sequence + 1
+        else:
+            new_sequence = 1
+
+        return f'INV{current_year}{new_sequence:04d}'
+
+class InvoiceGetSerializer(serializers.ModelSerializer):
+    tenancy = TenancyListSerializer(read_only=True)
+    payment_schedules = PaymentScheduleGetSerializer(many=True, read_only=True)
+    additional_charges = AdditionalChargeGetSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Invoice
+        fields = '__all__'

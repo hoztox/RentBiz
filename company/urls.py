@@ -94,6 +94,15 @@ urlpatterns = [
     path('additional-charges/<int:pk>/', AdditionalChargeUpdateView.as_view(), name='additional-charges-update'),
     path('additional-charges/<int:pk>/delete/', AdditionalChargeDeleteView.as_view(), name='additional-charges-delete'),
     
+    
+    # Invoice
+    path('invoice/create/', CreateInvoiceAPIView.as_view(), name='create-invoice'),
+    path('invoices/company/<int:company_id>/', GetInvoicesByCompanyAPIView.as_view(), name='get-invoices-by-company'),
+    path('invoice/delete/<int:invoice_id>/', DeleteInvoiceAPIView.as_view(), name='delete-invoice'),
+    path('invoices/<int:pk>/', InvoiceDetailView.as_view(), name='invoice-detail'),
+    
+    
+    
 ]
 
 
