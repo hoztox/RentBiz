@@ -182,6 +182,19 @@ class UnitGetSerializer(serializers.ModelSerializer):
     class Meta:
         model = Units
         fields = '__all__'
+from rest_framework import serializers
+from .models import Units, UnitDocumentType, MasterDocumentType, UnitType, Building, Company, Users
+
+class UnitDocumentTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UnitDocumentType
+        fields = ['id', 'doc_type', 'number', 'issued_date', 'expiry_date', 'upload_file']
+
+    def validate(self, data):
+        if not data.get('doc_type'):
+            raise serializers.ValidationError("doc_type is required for unit_comp documents")
+        return data
+
 class UnitSerializer(serializers.ModelSerializer):
     unit_comp = UnitDocumentTypeSerializer(many=True, required=False)
 
@@ -193,13 +206,16 @@ class UnitSerializer(serializers.ModelSerializer):
         print("Creating unit with validated_data:", validated_data)
         documents_data = validated_data.pop('unit_comp', [])
         unit = Units.objects.create(**validated_data)
+
         for doc_data in documents_data:
             UnitDocumentType.objects.create(unit=unit, **doc_data)
+
         return unit
 
     def update(self, instance, validated_data):
         print("Serializer update called with validated_data:", validated_data)
         
+        # Extract and remove unit_comp data
         documents_data = validated_data.pop('unit_comp', None)
         print(f"Documents data extracted: {documents_data}")
 
@@ -210,7 +226,7 @@ class UnitSerializer(serializers.ModelSerializer):
         instance.save()
         print("Main unit instance saved")
 
-        # Only process documents if documents_data is explicitly provided
+        # Process unit_comp documents if provided
         if documents_data is not None:
             existing_docs = {doc.id: doc for doc in instance.unit_comp.all()}
             print(f"Existing documents: {list(existing_docs.keys())}")
@@ -230,23 +246,17 @@ class UnitSerializer(serializers.ModelSerializer):
                     # Update existing document
                     doc_instance = existing_docs[doc_id]
                     if 'upload_file' in doc_data:
-                        upload_file = doc_data['upload_file']
+                        upload_file = doc_data.get('upload_file')
                         if upload_file and hasattr(upload_file, 'read'):
                             print(f"New file uploaded for document {doc_id}: {upload_file.name}")
                             doc_instance.upload_file = upload_file
                         elif upload_file is None:
-                            if doc_data.get('explicit_remove', False):
-                                print(f"Explicitly removing file from document {doc_id}")
-                                doc_instance.upload_file = None
-                            else:
-                                print(f"Preserving existing file for document {doc_id}: {doc_instance.upload_file}")
-                        else:
-                            print(f"Unrecognized upload_file format for document {doc_id}, preserving existing file")
+                            print(f"Preserving existing file for document {doc_id}: {doc_instance.upload_file}")
                     else:
                         print(f"No upload_file key in doc_data, preserving existing file for document {doc_id}")
 
                     for attr, value in doc_data.items():
-                        if attr not in ['upload_file', 'id', 'explicit_remove']:
+                        if attr not in ['upload_file', 'id']:
                             setattr(doc_instance, attr, value)
 
                     doc_instance.save()
@@ -255,17 +265,11 @@ class UnitSerializer(serializers.ModelSerializer):
                     # Create new document
                     create_data = doc_data.copy()
                     create_data.pop('id', None)
-                    create_data.pop('explicit_remove', None)
-
-                    upload_file = create_data.get('upload_file')
-                    if upload_file and not hasattr(upload_file, 'read'):
-                        create_data['upload_file'] = None
-
                     new_doc = UnitDocumentType.objects.create(unit=instance, **create_data)
                     print(f"New document created with ID: {new_doc.id}, file: {new_doc.upload_file}")
                     updated_ids.append(new_doc.id)
 
-            # Delete documents not in updated_ids
+            # Delete documents not included in the update
             for doc_id in existing_docs:
                 if doc_id not in updated_ids:
                     print(f"Deleting document {doc_id}")

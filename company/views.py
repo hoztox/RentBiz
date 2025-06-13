@@ -608,39 +608,24 @@ class BuildingByCompanyView(APIView):
             
         return paginate_queryset(buildings, request, BuildingSerializer)
         
+ 
+ 
 
 class UnitCreateView(APIView):
     def post(self, request):
         print("Raw request data:", request.data)
         
-   
+        # Extract base unit data (excluding nested unit_comp fields)
         unit_data = {}
         for key, value in request.data.items():
-            if key not in ['unit_comp_json'] and not key.startswith('document_file_'):
+            if not key.startswith('unit_comp['):
                 unit_data[key] = value
         
-       
-        unit_comp_json = request.data.get('unit_comp_json')
-        if unit_comp_json:
-            try:
-                unit_comp_data = json.loads(unit_comp_json)
-                
-          
-                for doc_data in unit_comp_data:
-                    file_index = doc_data.pop('file_index', None)
-                    if file_index is not None:
-                        file_key = f'document_file_{file_index}'
-                        if file_key in request.FILES:
-                            doc_data['upload_file'] = request.FILES[file_key]
-                
-                unit_data['unit_comp'] = unit_comp_data
-                
-            except json.JSONDecodeError:
-                return Response(
-                    {'error': 'Invalid JSON in unit_comp_json'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+        # Parse unit_comp (nested document data)
+        unit_comp_data = self.parse_unit_comp_data(request.data, request.FILES)
         
+        # Always assign unit_comp (even if it's an empty list)
+        unit_data['unit_comp'] = unit_comp_data
         print("Processed unit data:", unit_data)
         
         serializer = UnitSerializer(data=unit_data)
@@ -652,8 +637,77 @@ class UnitCreateView(APIView):
             print("Serializer errors:", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
- 
-
+    def parse_unit_comp_data(self, data, files):
+        documents = defaultdict(dict)
+        
+        print("Starting to parse unit_comp data...")
+        print("Available keys:", list(data.keys()))
+        print("Available file keys:", list(files.keys()))
+        
+        # Handle regular form fields (non-file fields)
+        for key, value in data.items():
+            print(f"Processing key: {key}, value: {value}, type: {type(value)}")
+            if key.startswith("unit_comp["):
+                try:
+                    # Remove unit_comp[ and split by ][
+                    key_without_prefix = key[10:]  # Remove 'unit_comp['
+                    parts = key_without_prefix.split('][')
+                    
+                    if len(parts) == 2:
+                        index_part = parts[0]  # Should be '0', '1', etc.
+                        field_part = parts[1].rstrip(']')  # Remove trailing ']'
+                        
+                        index = int(index_part)
+                        field = field_part
+                        
+                        # Skip file fields in request.data (handled in request.FILES)
+                        if field == 'upload_file':
+                            continue
+                        
+                        # Handle QueryDict values (lists or single values)
+                        actual_value = value[0] if isinstance(value, list) and value else value
+                        
+                        documents[index][field] = actual_value
+                        print(f"✅ Parsed field: {key} -> index={index}, field={field}, value={actual_value}")
+                    else:
+                        print(f"❌ Invalid key format: {key}, parts: {parts}")
+                        
+                except (ValueError, IndexError, AttributeError) as e:
+                    print(f"❌ Error parsing key {key}: {e}")
+        
+        # Handle file uploads
+        for file_key, file_value in files.items():
+            print(f"Processing file key: {file_key}, value type: {type(file_value)}")
+            if file_key.startswith("unit_comp["):
+                try:
+                    # Remove unit_comp[ and split by ][
+                    key_without_prefix = file_key[10:]  # Remove 'unit_comp['
+                    parts = key_without_prefix.split('][')
+                    
+                    if len(parts) == 2:
+                        index_part = parts[0]  # Should be '0', '1', etc.
+                        field_part = parts[1].rstrip(']')  # Remove trailing ']'
+                        
+                        index = int(index_part)
+                        field = field_part
+                        
+                        if field == 'upload_file':
+                            documents[index][field] = file_value
+                            print(f"✅ Parsed file: {file_key} -> index={index}, field={field}")
+                        else:
+                            print(f"❌ Unexpected file field: {field}")
+                    else:
+                        print(f"❌ Invalid file key format: {file_key}, parts: {parts}")
+                        
+                except (ValueError, IndexError) as e:
+                    print(f"❌ Error parsing file key {file_key}: {e}")
+        
+        print("Raw documents dict:", dict(documents))
+        result = list(documents.values())
+        print("Final unit_comp list:", result)
+        print("Number of documents parsed:", len(result))
+        
+        return result
  
  
 
@@ -677,7 +731,6 @@ class UnitsByCompanyView(APIView):
  
 
 class UnitEditAPIView(APIView):
-
     def get_object(self, id):
         return get_object_or_404(Units, id=id)
 
@@ -690,26 +743,35 @@ class UnitEditAPIView(APIView):
         print("Incoming PUT data:", request.data)
         unit = self.get_object(id)
 
+        # Extract unit data (excluding document-related fields)
         unit_data = {}
-        excluded_keys = ['id', 'doc_type', 'number', 'issued_date', 'expiry_date']
+        excluded_keys = ['id', 'doc_type', 'number', 'issued_date', 'expiry_date', 'unit_comp_json']
         for key, value in request.data.items():
             if key not in excluded_keys and not key.startswith('document_file_'):
                 unit_data[key] = value
 
-        # Extract document data
-        doc_data = {
-            'id': request.data.get('id'),   
-            'doc_type': request.data.get('doc_type'),
-            'number': request.data.get('number'),
-            'issued_date': request.data.get('issued_date'),
-            'expiry_date': request.data.get('expiry_date'),
-        }
+        # Parse unit_comp_json if present
+        unit_comp_data = []
+        if 'unit_comp_json' in request.data:
+            try:
+                unit_comp_json = request.data['unit_comp_json']
+                # Handle case where unit_comp_json is a list (QueryDict may wrap it)
+                if isinstance(unit_comp_json, list):
+                    unit_comp_json = unit_comp_json[0]
+                unit_comp_data = json.loads(unit_comp_json)
+                print("Parsed unit_comp_json:", unit_comp_data)
+            except (json.JSONDecodeError, TypeError) as e:
+                print(f"Error parsing unit_comp_json: {e}")
+                return Response({"error": "Invalid unit_comp_json format"}, status=status.HTTP_400_BAD_REQUEST)
 
-        if 'document_file_0' in request.FILES:
-            doc_data['upload_file'] = request.FILES['document_file_0']
+        # Handle file uploads
+        for index, doc_data in enumerate(unit_comp_data):
+            file_key = f'document_file_{index}'
+            if file_key in request.FILES:
+                doc_data['upload_file'] = request.FILES[file_key]
+                print(f"Added file for document {index}: {doc_data['upload_file'].name}")
 
-        unit_data['unit_comp'] = [doc_data]  # attach as list
-
+        unit_data['unit_comp'] = unit_comp_data
         print("Processed unit data:", unit_data)
 
         serializer = UnitSerializer(unit, data=unit_data, partial=True)
