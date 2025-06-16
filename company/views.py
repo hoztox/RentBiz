@@ -35,6 +35,9 @@ import re
 # ------------------------------------------------------------------
 # Third-Party imports  
 # ------------------------------------------------------------------
+from datetime import date
+from django.template.loader import get_template
+from django.core.exceptions import ObjectDoesNotExist
 from xhtml2pdf import pisa
 from io import BytesIO
 
@@ -624,39 +627,24 @@ class BuildingByCompanyView(APIView):
             
         return paginate_queryset(buildings, request, BuildingSerializer)
         
+ 
+ 
 
 class UnitCreateView(APIView):
     def post(self, request):
         print("Raw request data:", request.data)
         
-   
+        # Extract base unit data (excluding nested unit_comp fields)
         unit_data = {}
         for key, value in request.data.items():
-            if key not in ['unit_comp_json'] and not key.startswith('document_file_'):
+            if not key.startswith('unit_comp['):
                 unit_data[key] = value
         
-       
-        unit_comp_json = request.data.get('unit_comp_json')
-        if unit_comp_json:
-            try:
-                unit_comp_data = json.loads(unit_comp_json)
-                
-          
-                for doc_data in unit_comp_data:
-                    file_index = doc_data.pop('file_index', None)
-                    if file_index is not None:
-                        file_key = f'document_file_{file_index}'
-                        if file_key in request.FILES:
-                            doc_data['upload_file'] = request.FILES[file_key]
-                
-                unit_data['unit_comp'] = unit_comp_data
-                
-            except json.JSONDecodeError:
-                return Response(
-                    {'error': 'Invalid JSON in unit_comp_json'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+        # Parse unit_comp (nested document data)
+        unit_comp_data = self.parse_unit_comp_data(request.data, request.FILES)
         
+        # Always assign unit_comp (even if it's an empty list)
+        unit_data['unit_comp'] = unit_comp_data
         print("Processed unit data:", unit_data)
         
         serializer = UnitSerializer(data=unit_data)
@@ -668,8 +656,77 @@ class UnitCreateView(APIView):
             print("Serializer errors:", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
- 
-
+    def parse_unit_comp_data(self, data, files):
+        documents = defaultdict(dict)
+        
+        print("Starting to parse unit_comp data...")
+        print("Available keys:", list(data.keys()))
+        print("Available file keys:", list(files.keys()))
+        
+        # Handle regular form fields (non-file fields)
+        for key, value in data.items():
+            print(f"Processing key: {key}, value: {value}, type: {type(value)}")
+            if key.startswith("unit_comp["):
+                try:
+                    # Remove unit_comp[ and split by ][
+                    key_without_prefix = key[10:]  # Remove 'unit_comp['
+                    parts = key_without_prefix.split('][')
+                    
+                    if len(parts) == 2:
+                        index_part = parts[0]  # Should be '0', '1', etc.
+                        field_part = parts[1].rstrip(']')  # Remove trailing ']'
+                        
+                        index = int(index_part)
+                        field = field_part
+                        
+                        # Skip file fields in request.data (handled in request.FILES)
+                        if field == 'upload_file':
+                            continue
+                        
+                        # Handle QueryDict values (lists or single values)
+                        actual_value = value[0] if isinstance(value, list) and value else value
+                        
+                        documents[index][field] = actual_value
+                        print(f"✅ Parsed field: {key} -> index={index}, field={field}, value={actual_value}")
+                    else:
+                        print(f"❌ Invalid key format: {key}, parts: {parts}")
+                        
+                except (ValueError, IndexError, AttributeError) as e:
+                    print(f"❌ Error parsing key {key}: {e}")
+        
+        # Handle file uploads
+        for file_key, file_value in files.items():
+            print(f"Processing file key: {file_key}, value type: {type(file_value)}")
+            if file_key.startswith("unit_comp["):
+                try:
+                    # Remove unit_comp[ and split by ][
+                    key_without_prefix = file_key[10:]  # Remove 'unit_comp['
+                    parts = key_without_prefix.split('][')
+                    
+                    if len(parts) == 2:
+                        index_part = parts[0]  # Should be '0', '1', etc.
+                        field_part = parts[1].rstrip(']')  # Remove trailing ']'
+                        
+                        index = int(index_part)
+                        field = field_part
+                        
+                        if field == 'upload_file':
+                            documents[index][field] = file_value
+                            print(f"✅ Parsed file: {file_key} -> index={index}, field={field}")
+                        else:
+                            print(f"❌ Unexpected file field: {field}")
+                    else:
+                        print(f"❌ Invalid file key format: {file_key}, parts: {parts}")
+                        
+                except (ValueError, IndexError) as e:
+                    print(f"❌ Error parsing file key {file_key}: {e}")
+        
+        print("Raw documents dict:", dict(documents))
+        result = list(documents.values())
+        print("Final unit_comp list:", result)
+        print("Number of documents parsed:", len(result))
+        
+        return result
  
  
 
@@ -693,7 +750,6 @@ class UnitsByCompanyView(APIView):
  
 
 class UnitEditAPIView(APIView):
-
     def get_object(self, id):
         return get_object_or_404(Units, id=id)
 
@@ -706,26 +762,35 @@ class UnitEditAPIView(APIView):
         print("Incoming PUT data:", request.data)
         unit = self.get_object(id)
 
+        # Extract unit data (excluding document-related fields)
         unit_data = {}
-        excluded_keys = ['id', 'doc_type', 'number', 'issued_date', 'expiry_date']
+        excluded_keys = ['id', 'doc_type', 'number', 'issued_date', 'expiry_date', 'unit_comp_json']
         for key, value in request.data.items():
             if key not in excluded_keys and not key.startswith('document_file_'):
                 unit_data[key] = value
 
-        # Extract document data
-        doc_data = {
-            'id': request.data.get('id'),   
-            'doc_type': request.data.get('doc_type'),
-            'number': request.data.get('number'),
-            'issued_date': request.data.get('issued_date'),
-            'expiry_date': request.data.get('expiry_date'),
-        }
+        # Parse unit_comp_json if present
+        unit_comp_data = []
+        if 'unit_comp_json' in request.data:
+            try:
+                unit_comp_json = request.data['unit_comp_json']
+                # Handle case where unit_comp_json is a list (QueryDict may wrap it)
+                if isinstance(unit_comp_json, list):
+                    unit_comp_json = unit_comp_json[0]
+                unit_comp_data = json.loads(unit_comp_json)
+                print("Parsed unit_comp_json:", unit_comp_data)
+            except (json.JSONDecodeError, TypeError) as e:
+                print(f"Error parsing unit_comp_json: {e}")
+                return Response({"error": "Invalid unit_comp_json format"}, status=status.HTTP_400_BAD_REQUEST)
 
-        if 'document_file_0' in request.FILES:
-            doc_data['upload_file'] = request.FILES['document_file_0']
+        # Handle file uploads
+        for index, doc_data in enumerate(unit_comp_data):
+            file_key = f'document_file_{index}'
+            if file_key in request.FILES:
+                doc_data['upload_file'] = request.FILES[file_key]
+                print(f"Added file for document {index}: {doc_data['upload_file'].name}")
 
-        unit_data['unit_comp'] = [doc_data]  # attach as list
-
+        unit_data['unit_comp'] = unit_comp_data
         print("Processed unit data:", unit_data)
 
         serializer = UnitSerializer(unit, data=unit_data, partial=True)
@@ -1507,7 +1572,7 @@ class TenancyDetailView(APIView):
     def get(self, request, pk):
         try:
             tenancy = Tenancy.objects.select_related('tenant', 'building', 'unit').get(pk=pk)
-            serializer = TenancyDetailSerializer(tenancy)
+            serializer = TenancyListSerializer(tenancy)
             
             return Response({
                 'success': True,
@@ -2246,13 +2311,14 @@ class AdditionalChargeCreateView(APIView):
             tenancy_id = data.get('tenancy')
             charge_type_id = data.get('charge_type')
             reason = data.get('reason')
+            in_date = data.get('in_date')  
             due_date = data.get('due_date')
             amount = data.get('amount')
             tax = data.get('tax', '0.00')
             charge_status = data.get('status', 'pending')  # Rename to avoid conflict
 
             # Validate required fields
-            if not all([tenancy_id, charge_type_id, reason, due_date, amount, charge_status]):
+            if not all([tenancy_id, charge_type_id, reason,in_date, due_date, amount, charge_status]):
                 return Response({
                     'success': False,
                     'message': 'All required fields (tenancy, charge_type, reason, due_date, amount, status) must be provided'
@@ -2284,6 +2350,7 @@ class AdditionalChargeCreateView(APIView):
                     tenancy=tenancy,
                     charge_type=charge_type,
                     reason=reason,
+                    in_date=in_date,  
                     due_date=due_date,
                     status=charge_status,  # Use renamed variable
                     amount=amount_decimal,
@@ -2315,6 +2382,7 @@ class AdditionalChargeUpdateView(APIView):
             tenancy_id = data.get('tenancy')
             charge_type_id = data.get('charge_type')
             reason = data.get('reason')
+            in_date = data.get('in_date')  # Added in_date field
             due_date = data.get('due_date')
             amount = data.get('amount')
             tax = data.get('tax', '0.00')
@@ -2361,6 +2429,7 @@ class AdditionalChargeUpdateView(APIView):
                 additional_charge.tenancy = tenancy
                 additional_charge.charge_type = charge_type
                 additional_charge.reason = reason
+                additional_charge.in_date = in_date  # Update in_date field
                 additional_charge.due_date = due_date
                 additional_charge.status = status_field
                 additional_charge.amount = amount_decimal
@@ -2505,7 +2574,7 @@ class AdditionalChargeExportCSVView(APIView):
                 writer = csv.writer(buf)
 
                 writer.writerow([
-                    "ID", "Charge Type", "Amount", "Reason", "Due Date",
+                    "ID", "Charge Type", "Amount", "Reason","In Date", "Due Date",
                     "Status", "Tax", "Total", "Tenancy Code"
                 ])
 
@@ -2515,6 +2584,7 @@ class AdditionalChargeExportCSVView(APIView):
                         ch.charge_type.name if ch.charge_type else "N/A",
                         f"{ch.amount:.2f}" if ch.amount is not None else "0.00",
                         ch.reason or "N/A",
+                        ch.in_date.strftime("%d-%b-%Y") if ch.in_date else "N/A",
                         ch.due_date.strftime("%d-%b-%Y") if ch.due_date else "N/A",
                         ch.status.capitalize() if ch.status else "N/A",
                         f"{ch.tax:.2f}"   if ch.tax   is not None else "0.00",
@@ -2552,3 +2622,107 @@ class AdditionalChargeExportCSVView(APIView):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+                       
+ 
+class CreateInvoiceAPIView(APIView):
+    def post(self, request):
+        print("Request data:", request.data)
+        serializer = InvoiceSerializer(data=request.data)
+        if serializer.is_valid():
+            invoice = serializer.save()
+            print("Created invoice:", {
+                'id': invoice.id,
+                'invoice_number': invoice.invoice_number,
+                'company': invoice.company_id,
+                'user': invoice.user_id,
+                'total_amount': str(invoice.total_amount),
+                'status': invoice.status
+            })
+            return Response({
+                'success': True,
+                'message': 'Invoice created successfully',
+                'invoice': {
+                    'id': invoice.id,
+                    'invoice_number': invoice.invoice_number,
+                    'total_amount': str(invoice.total_amount),
+                    'status': invoice.status
+                }
+            }, status=status.HTTP_201_CREATED)
+        print("Serializer errors:", serializer.errors)
+        return Response({
+            'success': False,
+            'message': 'Failed to create invoice',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class GetInvoicesByCompanyAPIView(APIView):
+    def get(self, request, company_id):
+        try:
+          
+            invoices = Invoice.objects.filter(company__id=company_id)
+            
+            if not invoices.exists():
+                return Response({
+                    'success': True,
+                    'message': 'No invoices found for this company',
+                    'data': []
+                }, status=status.HTTP_200_OK)
+
+        
+            serializer = InvoiceGetSerializer(invoices, many=True)
+            
+            return Response({
+                'success': True,
+                'message': 'Invoices retrieved successfully',
+                'data': serializer.data
+            }, status=status.HTTP_200_OK)
+            
+        except ObjectDoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Company not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error retrieving invoices: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+
+class DeleteInvoiceAPIView(APIView):
+    def delete(self, request, invoice_id):
+        try:
+            invoice = Invoice.objects.get(id=invoice_id)
+            invoice_number = invoice.invoice_number  
+            invoice.delete()
+            return Response({
+                'success': True,
+                'message': f'Invoice {invoice_number} deleted successfully'
+            }, status=status.HTTP_200_OK)
+        except ObjectDoesNotExist:
+            return Response({
+                'success': False,
+                'message': f'Invoice with ID {invoice_id} not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error deleting invoice: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            
+            
+class InvoiceDetailView(APIView):
+    def get_object(self, pk):
+        try:
+            return Invoice.objects.get(pk=pk)
+        except Invoice.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        invoice = self.get_object(pk)
+        if not invoice:
+            return Response({'error': 'Invoice not found'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = InvoiceGetSerializer(invoice)
+        return Response(serializer.data, status=status.HTTP_200_OK)

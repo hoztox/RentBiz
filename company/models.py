@@ -468,7 +468,9 @@ class PaymentSchedule(models.Model):
     due_date = models.DateField(null=True, blank=True)   
     status_choices = [
         ('pending', 'Pending'),
-        ('paid', 'Paid')  
+        ('paid', 'Paid') ,
+         ('invoice', 'Invoice')
+       
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='pending')   
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -476,7 +478,7 @@ class PaymentSchedule(models.Model):
     vat = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     tax = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
-
+    
   
 
     def __str__(self):
@@ -492,7 +494,8 @@ class AdditionalCharge(models.Model):
     in_date  = models.DateField(null=True, blank=True)
     status_choices = [
         ('pending', 'Pending'),
-        ('paid', 'Paid')  
+        ('paid', 'Paid') ,
+        ('invoice', 'Invoice') 
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='pending')   
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -505,3 +508,27 @@ class AdditionalCharge(models.Model):
     def __str__(self):
         return f"{self.tenancy} - {self.charge_type} - Due: {self.due_date}"
 
+
+
+class Invoice(models.Model):
+    user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='invoice_user', null=True, blank=True) 
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='invoice_comp', null=True, blank=True)
+    tenancy = models.ForeignKey(Tenancy, on_delete=models.CASCADE, related_name='invoices', null=True, blank=True)
+    invoice_number = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    in_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    total_amount = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+
+  
+    status_choices = [
+        ('unpaid', 'Unpaid'),
+        ('paid', 'Paid'),
+    ]
+    status = models.CharField(max_length=20, choices=status_choices, default='unpaid')
+
+    
+    payment_schedules = models.ManyToManyField(PaymentSchedule, blank=True, related_name='invoices')
+    additional_charges = models.ManyToManyField(AdditionalCharge, blank=True, related_name='invoices')
+
+    def __str__(self):
+        return f"Invoice {self.invoice_number} for {self.tenancy}"
