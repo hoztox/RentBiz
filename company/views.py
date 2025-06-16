@@ -41,6 +41,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from xhtml2pdf import pisa
 from io import BytesIO
 
+
 # ------------------------------------------------------------------
 # Local Application imports  
 # ------------------------------------------------------------------
@@ -2639,13 +2640,17 @@ class AdditionalChargeExportCSVView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
                        
- 
+
 class CreateInvoiceAPIView(APIView):
     def post(self, request):
         print("Request data:", request.data)
         serializer = InvoiceSerializer(data=request.data)
         if serializer.is_valid():
             invoice = serializer.save()
+            
+            # Send email with PDF attachment
+            self.send_invoice_email(invoice)
+            
             print("Created invoice:", {
                 'id': invoice.id,
                 'invoice_number': invoice.invoice_number,
@@ -2670,6 +2675,37 @@ class CreateInvoiceAPIView(APIView):
             'message': 'Failed to create invoice',
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+
+    def send_invoice_email(self, invoice):
+        # Render HTML content
+        html_content = render_to_string('company/invoice_body.html', {'invoice': invoice})
+        
+        # Create PDF
+        pdf_content = render_to_string('company/invoice_pdf.html', {'invoice': invoice})
+        pdf_file = BytesIO()
+        pisa.CreatePDF(pdf_content, dest=pdf_file)
+        
+        # Prepare email
+        subject = f"Invoice #{invoice.invoice_number} from {invoice.company.company_name}"
+        from_email = settings.DEFAULT_FROM_EMAIL
+        to_email = invoice.tenancy.tenant.email
+        
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=html_content,
+            from_email=from_email,
+            to=[to_email]
+        )
+        email.attach_alternative(html_content, "text/html")
+        
+        # Attach PDF
+        email.attach(
+            filename=f"Invoice_{invoice.invoice_number}.pdf",
+            content=pdf_file.getvalue(),
+            mimetype='application/pdf'
+        )
+        
+        email.send()
 
 
 class GetInvoicesByCompanyAPIView(APIView):
