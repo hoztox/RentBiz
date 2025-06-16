@@ -239,6 +239,7 @@ class UserListByCompanyAPIView(APIView):
 
         if status_filter in ['active','blocked']:
             users = users.filter(status=status_filter)
+        users = users.order_by('id')
 
 
         return paginate_queryset(users, request, UserSerializer)
@@ -591,9 +592,8 @@ class BuildingDetailView(APIView):
 
 class BuildingByCompanyView(APIView):
     def get(self, request, company_id):
-        
-        search_query = request.query_params.get('search', '').strip()
         status_filter = request.query_params.get('status', '').strip().lower()
+        search_query = request.query_params.get('search', '').strip()
         buildings = Building.objects.filter(company__id=company_id)
         if search_query:
             buildings = buildings.filter(
@@ -605,6 +605,7 @@ class BuildingByCompanyView(APIView):
             )
         if status_filter in ['active','inactive']:
             buildings = buildings.filter(status=status_filter)
+        buildings = buildings.order_by('id') 
             
         return paginate_queryset(buildings, request, BuildingSerializer)
         
@@ -725,8 +726,23 @@ class UnitDetailView(APIView):
 class UnitsByCompanyView(APIView):
     def get(self, request, company_id):
         units = Units.objects.filter(company__id=company_id)
-        serializer = UnitGetSerializer(units, many=True)
-        return Response(serializer.data)
+        search_query = request.query_params.get('search', '').strip()
+        status_filter = request.query_params.get('status', '').strip().lower()
+        if search_query:
+            units = units.filter(
+                Q(code__icontains = search_query) |
+                Q(created_at__icontains = search_query)|
+                Q(unit_name__icontains = search_query)|
+                Q(address__icontains = search_query) |
+                Q(building__building_name__icontains=search_query) |
+                Q(unit_type__title__icontains = search_query)  
+
+            )
+        if status_filter in ['occupied','renovation','vacant', 'disputed' ]:
+            units = units.filter(unit_status__iexact=status_filter)
+        units = units.order_by('id')
+
+        return paginate_queryset(units,request,UnitGetSerializer)
     
  
 
