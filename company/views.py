@@ -591,9 +591,8 @@ class BuildingDetailView(APIView):
 
 class BuildingByCompanyView(APIView):
     def get(self, request, company_id):
-        
-        search_query = request.query_params.get('search', '').strip()
         status_filter = request.query_params.get('status', '').strip().lower()
+        search_query = request.query_params.get('search', '').strip()
         buildings = Building.objects.filter(company__id=company_id)
         if search_query:
             buildings = buildings.filter(
@@ -671,8 +670,23 @@ class UnitDetailView(APIView):
 class UnitsByCompanyView(APIView):
     def get(self, request, company_id):
         units = Units.objects.filter(company__id=company_id)
-        serializer = UnitGetSerializer(units, many=True)
-        return Response(serializer.data)
+        search_query = request.query_params.get('search', '').strip()
+        status_filter = request.query_params.get('status', '').strip().lower()
+        if search_query:
+            units = units.filter(
+                Q(code__icontains = search_query) |
+                Q(created_at__icontains = search_query)|
+                Q(unit_name__icontains = search_query)|
+                Q(address__icontains = search_query) |
+                Q(building__building_name__icontains=search_query) |
+                Q(unit_type__title__icontains = search_query)  
+
+            )
+        if status_filter in ['occupied','renovation','vacant', 'disputed' ]:
+            units = units.filter(unit_status__iexact=status_filter)
+        
+
+        return paginate_queryset(units,request,UnitGetSerializer)
     
  
 
