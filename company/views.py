@@ -1,38 +1,54 @@
-from django.shortcuts import render
-from .serializers import *
-from .models import *
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rentbiz.utils.pagination import paginate_queryset
-from django.template.loader import render_to_string
+# ------------------------------------------------------------------
+# Django imports  
+# ------------------------------------------------------------------
+from django.shortcuts import render, get_object_or_404
+from django.template.loader import render_to_string, get_template
 from django.utils.html import strip_tags
 from django.core.mail import EmailMultiAlternatives
 from django.conf import settings
+from django.http import HttpResponse, StreamingHttpResponse
 from django.db.models import Q
-import logging
-from django.shortcuts import get_object_or_404
-logger = logging.getLogger(__name__)
-from datetime import datetime, timedelta
-import jwt
-import re
-from rest_framework import generics
-from rest_framework import status
-from django.contrib.auth import authenticate
-from rest_framework_simplejwt.tokens import RefreshToken
-from collections import defaultdict
 from django.utils import timezone
+
+# ------------------------------------------------------------------
+# REST Framework imports  
+# ------------------------------------------------------------------
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework import generics
+from rest_framework_simplejwt.tokens import RefreshToken
+
+# ------------------------------------------------------------------
+# Python Standard Library imports  
+# ------------------------------------------------------------------
+from datetime import datetime, timedelta, date
+import logging
+import csv
+import io
 import json
-from datetime import date
-from django.template.loader import get_template
- 
+import uuid
+from urllib.parse import quote
+from collections import defaultdict
+import re
+
+# ------------------------------------------------------------------
+# Third-Party imports  
+# ------------------------------------------------------------------
 from xhtml2pdf import pisa
 from io import BytesIO
- 
-from django.http import HttpResponse
- 
-import uuid
 
+# ------------------------------------------------------------------
+# Local Application imports  
+# ------------------------------------------------------------------
+from .serializers import *
+from .models import *
+from rentbiz.utils.pagination import paginate_queryset, CustomPagination
+
+# ------------------------------------------------------------------
+# Logger Configuration  
+# ------------------------------------------------------------------
+logger = logging.getLogger(__name__)
 
  
 class CompanyLoginView(APIView):
@@ -2219,50 +2235,6 @@ class TenancyHTMLPDFView(APIView):
         return response
 
 
-class AdditionalChargeListView(APIView):
-    """List all additional charges with optional filtering by tenancy or search term"""
-
-    def get(self, request):
-        try:
-            # Get query parameters
-            tenancy_id = request.query_params.get('tenancy_id', None)
-            search_term = request.query_params.get('search_term', '')
-
-            # Base queryset
-            queryset = AdditionalCharge.objects.select_related('tenancy', 'charge_type').all()
-
-            # Filter by tenancy_id if provided
-            if tenancy_id:
-                queryset = queryset.filter(tenancy__id=tenancy_id)
-
-            # Filter by search term across multiple fields
-            if search_term:
-                queryset = queryset.filter(
-                    Q(tenancy__id__icontains=search_term) |
-                    Q(charge_type__name__icontains=search_term) |
-                    Q(reason__icontains=search_term) |
-                    Q(due_date__icontains=search_term) |
-                    Q(status__icontains=search_term) |
-                    Q(amount__icontains=search_term)
-                )
-
-            # Serialize the data
-            serializer = AdditionalChargeGetSerializer(queryset, many=True)
-
-            return Response({
-                'success': True,
-                'message': 'Additional charges retrieved successfully',
-                'data': serializer.data,
-                'count': queryset.count()
-            }, status=status.HTTP_200_OK)
-
-        except Exception as e:
-            return Response({
-                'success': False,
-                'message': f'Error retrieving additional charges: {str(e)}',
-                'data': []
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 
 class AdditionalChargeCreateView(APIView):
     """Create a new additional charge"""
@@ -2332,14 +2304,6 @@ class AdditionalChargeCreateView(APIView):
                 'message': f'Error creating additional charge: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  # Use status module
 
-
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status  # Add this import
-from django.db import transaction
-from decimal import Decimal
-from .models import AdditionalCharge, Tenancy, Charges
-from .serializers import AdditionalChargeGetSerializer
 
 class AdditionalChargeUpdateView(APIView):
     """Update an existing additional charge"""
@@ -2419,35 +2383,52 @@ class AdditionalChargeUpdateView(APIView):
 
 
 class AdditionalChargeListView(APIView):
-    """List all additional charges with optional filtering by tenancy or search term"""
-    # permission_classes = [IsAuthenticated]
-
+    """List all additional charges with pagination, filtering, and search"""
+    pagination_class = CustomPagination
+    
     def get(self, request):
         try:
-            tenancy_id = request.query_params.get('tenancy_id', None)
-            search_term = request.query_params.get('search_term', '')
-
-            queryset = AdditionalCharge.objects.select_related('tenancy', 'charge_type').all()
-
+            queryset = AdditionalCharge.objects.select_related('tenancy', 'charge_type').order_by('-id')
+            
+            # Apply filters
+            tenancy_id = request.query_params.get('tenancy_id')
+            status_filter = request.query_params.get('status')
+            
             if tenancy_id:
                 queryset = queryset.filter(tenancy__id=tenancy_id)
-
+            
+            if status_filter:
+                queryset = queryset.filter(status__iexact=status_filter)
+            
+            # Apply search
+            search_term = request.query_params.get('search', '')
             if search_term:
                 queryset = queryset.filter(
-                    Q(tenancy__id__icontains=search_term) |
+                    Q(id__icontains=search_term) |
                     Q(charge_type__name__icontains=search_term) |
                     Q(reason__icontains=search_term) |
-                    Q(due_date__icontains=search_term) |
-                    Q(status__icontains=search_term) |
+                    Q(tenancy__tenancy_code__icontains=search_term) |
                     Q(amount__icontains=search_term)
                 )
-
+            
+            # Paginate the results
+            paginator = self.pagination_class()
+            page = paginator.paginate_queryset(queryset, request)
+            
+            if page is not None:
+                serializer = AdditionalChargeGetSerializer(page, many=True)
+                return paginator.get_paginated_response({
+                    'success': True,
+                    'message': 'Additional charges retrieved successfully',
+                    'data': serializer.data
+                })
+            
+            # If no pagination, return all results
             serializer = AdditionalChargeGetSerializer(queryset, many=True)
             return Response({
                 'success': True,
                 'message': 'Additional charges retrieved successfully',
-                'data': serializer.data,
-                'count': queryset.count()
+                'data': serializer.data
             }, status=status.HTTP_200_OK)
 
         except Exception as e:
@@ -2480,3 +2461,94 @@ class AdditionalChargeDeleteView(APIView):
                 'success': False,
                 'message': f'Error deleting additional charge: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdditionalChargeExportCSVView(APIView):
+    """
+    Export AdditionalCharge objects as CSV, respecting tenancy, status,
+    and free‑text `search` filters.
+    """
+
+    def get(self, request):
+        try:
+            # ------------------------------------------------------------------
+            # 1. Build filtered queryset
+            # ------------------------------------------------------------------
+            qs = (AdditionalCharge.objects
+                  .select_related("tenancy", "charge_type")
+                  .order_by("-id"))
+
+            tenancy_id   = request.query_params.get("tenancy_id")
+            status_param = request.query_params.get("status")
+            search_term  = request.query_params.get("search", "")
+
+            if tenancy_id:
+                qs = qs.filter(tenancy__id=tenancy_id)
+
+            if status_param and status_param.lower() != "all":
+                qs = qs.filter(status__iexact=status_param)
+
+            if search_term:
+                qs = qs.filter(
+                    Q(id=search_term) |  # exact match avoids AutoField look‑up errors
+                    Q(charge_type__name__icontains=search_term) |
+                    Q(reason__icontains=search_term) |
+                    Q(tenancy__tenancy_code__icontains=search_term) |
+                    Q(amount__icontains=search_term)
+                )
+
+            # ------------------------------------------------------------------
+            # 2. Streaming CSV generator
+            # ------------------------------------------------------------------
+            def stream_csv():
+                buf = io.StringIO()
+                writer = csv.writer(buf)
+
+                writer.writerow([
+                    "ID", "Charge Type", "Amount", "Reason", "Due Date",
+                    "Status", "Tax", "Total", "Tenancy Code"
+                ])
+
+                for ch in qs:
+                    writer.writerow([
+                        ch.id,
+                        ch.charge_type.name if ch.charge_type else "N/A",
+                        f"{ch.amount:.2f}" if ch.amount is not None else "0.00",
+                        ch.reason or "N/A",
+                        ch.due_date.strftime("%d-%b-%Y") if ch.due_date else "N/A",
+                        ch.status.capitalize() if ch.status else "N/A",
+                        f"{ch.tax:.2f}"   if ch.tax   is not None else "0.00",
+                        f"{ch.total:.2f}" if ch.total is not None else "0.00",
+                        ch.tenancy.tenancy_code if ch.tenancy else "N/A",
+                    ])
+
+                    # hand back each chunk as UTF‑8 bytes
+                    buf.seek(0)
+                    data = buf.read()
+                    yield data.encode("utf-8")
+                    buf.seek(0)
+                    buf.truncate(0)
+
+            # ------------------------------------------------------------------
+            # 3. Build StreamingHttpResponse (ASCII‑safe headers!)
+            # ------------------------------------------------------------------
+            response = StreamingHttpResponse(
+                streaming_content=stream_csv(),
+                content_type="text/csv; charset=utf-8",
+            )
+            # filename must be ASCII: quote() handles spaces & non‑ASCII safely
+            filename = quote("additional_charges.csv")
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+            return response
+
+        except Exception as exc:
+            log.exception("AdditionalCharge CSV export failed")
+            return Response(
+                {
+                    "success": False,
+                    "message": f"Error exporting additional charges: {exc}",
+                    "data": [],
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

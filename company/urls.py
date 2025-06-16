@@ -93,6 +93,7 @@ urlpatterns = [
     path('additional-charges/create/', AdditionalChargeCreateView.as_view(), name='additional-charges-create'),
     path('additional-charges/<int:pk>/', AdditionalChargeUpdateView.as_view(), name='additional-charges-update'),
     path('additional-charges/<int:pk>/delete/', AdditionalChargeDeleteView.as_view(), name='additional-charges-delete'),
+    path('additional-charges/export-csv/', AdditionalChargeExportCSVView.as_view(), name='additional-charges-export-csv'),
     
 ]
 

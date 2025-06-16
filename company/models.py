@@ -488,7 +488,8 @@ class AdditionalCharge(models.Model):
     tenancy = models.ForeignKey(Tenancy, on_delete=models.CASCADE, related_name='additional_charges', null=True, blank=True)
     charge_type = models.ForeignKey(Charges, on_delete=models.CASCADE, related_name='chvcar', null=True, blank=True)   
     reason = models.CharField(max_length=255, null=True, blank=True)
-    due_date = models.DateField(null=True, blank=True)   
+    due_date = models.DateField(null=True, blank=True)
+    in_date  = models.DateField(null=True, blank=True)
     status_choices = [
         ('pending', 'Pending'),
         ('paid', 'Paid')  

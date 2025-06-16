@@ -715,7 +715,6 @@ class PaymentScheduleGetSerializer(serializers.ModelSerializer):
 class AdditionalChargeGetSerializer(serializers.ModelSerializer):
     charge_type = ChargesSerializer()
 
-
     class Meta:
         model = AdditionalCharge
         fields = '__all__'
