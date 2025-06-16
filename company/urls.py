@@ -101,6 +101,7 @@ urlpatterns = [
     path('invoices/company/<int:company_id>/', GetInvoicesByCompanyAPIView.as_view(), name='get-invoices-by-company'),
     path('invoice/delete/<int:invoice_id>/', DeleteInvoiceAPIView.as_view(), name='delete-invoice'),
     path('invoices/<int:pk>/', InvoiceDetailView.as_view(), name='invoice-detail'),
+    path('invoices/company/<int:company_id>/export-csv/', InvoiceExportCSVView.as_view(), name='export-invoices-csv'),
     
     
     

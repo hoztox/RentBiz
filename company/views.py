@@ -2675,35 +2675,32 @@ class CreateInvoiceAPIView(APIView):
 class GetInvoicesByCompanyAPIView(APIView):
     def get(self, request, company_id):
         try:
-          
-            invoices = Invoice.objects.filter(company__id=company_id)
-            
-            if not invoices.exists():
-                return Response({
-                    'success': True,
-                    'message': 'No invoices found for this company',
-                    'data': []
-                }, status=status.HTTP_200_OK)
+            # Filter invoices by company
+            queryset = Invoice.objects.filter(company_id=company_id)
 
-        
-            serializer = InvoiceGetSerializer(invoices, many=True)
-            
-            return Response({
-                'success': True,
-                'message': 'Invoices retrieved successfully',
-                'data': serializer.data
-            }, status=status.HTTP_200_OK)
-            
-        except ObjectDoesNotExist:
-            return Response({
-                'success': False,
-                'message': 'Company not found'
-            }, status=status.HTTP_404_NOT_FOUND)
+            # Handle search query
+            search = request.query_params.get('search', '')
+            if search:
+                queryset = queryset.filter(
+                    Q(invoice_number__icontains=search) |
+                    Q(in_date__icontains=search) |
+                    Q(tenancy__tenancy_code__icontains=search) |
+                    Q(tenancy__tenant__tenant_name__icontains=search) |
+                    Q(total_amount__icontains=search)
+                )
+
+            # Handle status filter
+            status_filter = request.query_params.get('status', '')
+            if status_filter:
+                queryset = queryset.filter(status=status_filter)
+
+            # Apply pagination
+            return paginate_queryset(queryset, request, InvoiceGetSerializer)
         except Exception as e:
-            return Response({
-                'success': False,
-                'message': f'Error retrieving invoices: {str(e)}'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {'success': False, 'message': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
             
 
 class DeleteInvoiceAPIView(APIView):
@@ -2742,3 +2739,106 @@ class InvoiceDetailView(APIView):
             return Response({'error': 'Invoice not found'}, status=status.HTTP_404_NOT_FOUND)
         serializer = InvoiceGetSerializer(invoice)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class InvoiceExportCSVView(APIView):
+    """
+    Export Invoice objects as CSV, including associated additional charges,
+    respecting search, status, and company filters.
+    """
+
+    def get(self, request, company_id):
+        try:
+            # 1. Build filtered queryset
+            queryset = Invoice.objects.filter(company_id=company_id).select_related('tenancy', 'tenancy__tenant').prefetch_related('additional_charges')
+
+            # Handle search query
+            search = request.query_params.get('search', '')
+            if search:
+                queryset = queryset.filter(
+                    Q(invoice_number__icontains=search) |
+                    Q(in_date__icontains=search) |
+                    Q(tenancy__tenancy_code__icontains=search) |
+                    Q(tenancy__tenant__tenant_name__icontains=search) |
+                    Q(total_amount__icontains=search)
+                )
+
+            # Handle status filter
+            status_filter = request.query_params.get('status', '')
+            if status_filter and status_filter.lower() != 'all':
+                queryset = queryset.filter(status__iexact=status_filter)
+
+            # 2. Streaming CSV generator
+            def stream_csv():
+                buf = io.StringIO()
+                writer = csv.writer(buf)
+
+                # Write header
+                writer.writerow([
+                    "Invoice ID", "Invoice Number", "Date", "Tenant Name", "Total Amount",
+                    "Status", "Tenancy Code", "Additional Charge ID", "Charge Type",
+                    "Charge Amount", "Charge Reason", "Charge Date", "Charge Status"
+                ])
+
+                for invoice in queryset:
+                    tenant_name = invoice.tenancy.tenant.tenant_name if invoice.tenancy and invoice.tenancy.tenant else "N/A"
+                    tenancy_code = invoice.tenancy.tenancy_code if invoice.tenancy else "N/A"
+                    additional_charges = invoice.additional_charges.all()
+
+                    if not additional_charges:
+                        # Write invoice row without additional charges
+                        writer.writerow([
+                            invoice.id,
+                            invoice.invoice_number or "N/A",
+                            invoice.in_date.strftime("%d-%b-%Y") if invoice.in_date else "N/A",
+                            tenant_name,
+                            f"{invoice.total_amount:.2f}" if invoice.total_amount else "0.00",
+                            invoice.status.capitalize() if invoice.status else "N/A",
+                            tenancy_code,
+                            "", "", "", "", "", ""
+                        ])
+                    else:
+                        # Write one row per additional charge
+                        for charge in additional_charges:
+                            writer.writerow([
+                                invoice.id,
+                                invoice.invoice_number or "N/A",
+                                invoice.in_date.strftime("%d-%b-%Y") if invoice.in_date else "N/A",
+                                tenant_name,
+                                f"{invoice.total_amount:.2f}" if invoice.total_amount else "0.00",
+                                invoice.status.capitalize() if invoice.status else "N/A",
+                                tenancy_code,
+                                charge.id,
+                                charge.charge_type.name if charge.charge_type else "N/A",
+                                f"{charge.amount:.2f}" if charge.amount else "0.00",
+                                charge.reason or "N/A",
+                                charge.in_date.strftime("%d-%b-%Y") if charge.in_date else "N/A",
+                                charge.status.capitalize() if charge.status else "N/A"
+                            ])
+
+                    # Hand back each chunk as UTF-8 bytes
+                    buf.seek(0)
+                    data = buf.read()
+                    yield data.encode("utf-8")
+                    buf.seek(0)
+                    buf.truncate(0)
+
+            # 3. Build StreamingHttpResponse
+            response = StreamingHttpResponse(
+                streaming_content=stream_csv(),
+                content_type="text/csv; charset=utf-8",
+            )
+            filename = quote(f"invoices_company_{company_id}.csv")
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+            return response
+
+        except Exception as exc:
+            return Response(
+                {
+                    "success": False,
+                    "message": f"Error exporting invoices: {exc}",
+                    "data": [],
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
