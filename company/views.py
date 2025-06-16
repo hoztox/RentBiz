@@ -239,6 +239,7 @@ class UserListByCompanyAPIView(APIView):
 
         if status_filter in ['active','blocked']:
             users = users.filter(status=status_filter)
+        users = users.order_by('id')
 
 
         return paginate_queryset(users, request, UserSerializer)
@@ -604,6 +605,7 @@ class BuildingByCompanyView(APIView):
             )
         if status_filter in ['active','inactive']:
             buildings = buildings.filter(status=status_filter)
+        buildings = buildings.order_by('id') 
             
         return paginate_queryset(buildings, request, BuildingSerializer)
         
@@ -684,7 +686,7 @@ class UnitsByCompanyView(APIView):
             )
         if status_filter in ['occupied','renovation','vacant', 'disputed' ]:
             units = units.filter(unit_status__iexact=status_filter)
-        
+        units = units.order_by('id')
 
         return paginate_queryset(units,request,UnitGetSerializer)
     
