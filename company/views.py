@@ -1682,7 +1682,7 @@ class BuildingsWithVacantUnitsView(APIView):
         serializer = BuildingSerializer(buildings, many=True)
         return Response(serializer.data)
     
-    
+
 class ConfirmTenancyView(APIView):
     def post(self, request, pk):
         tenancy = get_object_or_404(Tenancy, pk=pk)
@@ -1694,15 +1694,22 @@ class ConfirmTenancyView(APIView):
         if not unit:
             return Response({'detail': 'Tenancy has no unit assigned.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        tenancy.status = 'active'
-        tenancy.save()
+        with transaction.atomic():
+            tenancy.status = 'active'
+            tenancy.save()
 
-        unit.unit_status = 'occupied'
+            unit.unit_status = 'occupied'
+            unit.save()
 
-        unit.save()
+            # Create default InvoiceAutomationConfig for the tenancy
+            InvoiceAutomationConfig.objects.create(
+                tenancy=tenancy,
+                days_before_due=7,  # Default value as per model
+                combine_charges=False,  # Default value as per model
+                is_active=True  # Default value as per model
+            )
 
-        return Response({'detail': 'Tenancy confirmed and unit status set to occupied.'}, status=status.HTTP_200_OK)
-    
+        return Response({'detail': 'Tenancy confirmed, unit status set to occupied, and invoice config created.'}, status=status.HTTP_200_OK)
     
 
 class OccupiedUnitsByBuildingView(APIView):
