@@ -189,9 +189,6 @@ class CompanyLoginView(APIView):
             print("=== LOGIN FAILED ===")
             return Response({'error': 'Invalid username or password'}, status=status.HTTP_401_UNAUTHORIZED)
 
- 
-
-
 
 class UserCreateAPIView(APIView):
     def post(self, request):
@@ -2878,3 +2875,93 @@ class InvoiceExportCSVView(APIView):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class PaymentScheduleAPIView(APIView):
+    def get(self, request, tenancy_id):
+        """
+        Retrieve all payment schedules for a specific tenancy.
+        """
+        try:
+            payment_schedules = PaymentSchedule.objects.filter(tenancy_id=tenancy_id)
+            serializer = PaymentScheduleGetSerializer(payment_schedules, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    def patch(self, request, tenancy_id, schedule_id=None):
+        """
+        Update a specific payment schedule or all pending schedules with the same charge_type for a tenancy.
+        """
+        try:
+            apply_to_all_pending = request.data.get('apply_to_all_pending', False)
+            new_amount = request.data.get('amount')
+            
+            if not new_amount:
+                return Response({"error": "Amount is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+            new_amount = Decimal(new_amount)
+
+            if apply_to_all_pending:
+                # Determine charge_type from schedule_id or another logic
+                if schedule_id:
+                    try:
+                        reference_schedule = PaymentSchedule.objects.get(
+                            id=schedule_id,
+                            tenancy_id=tenancy_id,
+                            status='pending'
+                        )
+                        charge_type = reference_schedule.charge_type
+                    except PaymentSchedule.DoesNotExist:
+                        return Response({"error": "Reference payment schedule not found or not pending"}, status=status.HTTP_404_NOT_FOUND)
+                else:
+                    # Alternative: Get charge_type from the first pending schedule
+                    first_pending = PaymentSchedule.objects.filter(
+                        tenancy_id=tenancy_id,
+                        status='pending'
+                    ).first()
+                    if not first_pending:
+                        return Response({"error": "No pending schedules found"}, status=status.HTTP_404_NOT_FOUND)
+                    charge_type = first_pending.charge_type
+
+                # Update all pending schedules for the tenancy with the same charge_type
+                payment_schedules = PaymentSchedule.objects.filter(
+                    tenancy_id=tenancy_id,
+                    status='pending',
+                    charge_type=charge_type
+                )
+                if not payment_schedules.exists():
+                    return Response({"error": f"No pending schedules found with charge type {charge_type}"}, status=status.HTTP_404_NOT_FOUND)
+                
+                updated_count = payment_schedules.update(
+                    amount=new_amount,
+                    total=new_amount  # Adjust total if needed based on tax/vat
+                )
+                return Response({
+                    "message": f"Updated {updated_count} pending payment schedules with charge type {charge_type}",
+                    "updated_amount": str(new_amount)
+                }, status=status.HTTP_200_OK)
+            
+            else:
+                # Update a single schedule
+                if not schedule_id:
+                    return Response({"error": "Schedule ID is required for single schedule update"}, status=status.HTTP_400_BAD_REQUEST)
+                
+                try:
+                    payment_schedule = PaymentSchedule.objects.get(
+                        id=schedule_id,
+                        tenancy_id=tenancy_id,
+                        status='pending'
+                    )
+                except PaymentSchedule.DoesNotExist:
+                    return Response({"error": "Pending payment schedule not found"}, status=status.HTTP_404_NOT_FOUND)
+                
+                payment_schedule.amount = new_amount
+                payment_schedule.total = new_amount  # Adjust total if needed
+                payment_schedule.save()
+                
+                serializer = PaymentScheduleGetSerializer(payment_schedule)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+                
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

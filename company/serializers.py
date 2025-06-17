@@ -13,7 +13,6 @@ class UserSerializer(serializers.ModelSerializer):
     confirm_password = serializers.CharField(write_only=True)    
     company_id = serializers.IntegerField(write_only=True, required=True)
    
-    
 
     class Meta:
         model = Users
@@ -948,13 +947,6 @@ class TaxesSerializer(serializers.ModelSerializer):
     def get_state_name(self, obj):
         return obj.state.name if obj.state else None
 
- 
-
-
-
- 
-
-
 class InvoiceItemSerializer(serializers.Serializer):
     charge_type = serializers.CharField(max_length=255)
     description = serializers.CharField(max_length=255)
@@ -1075,6 +1067,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             new_sequence = 1
 
         return f'INV{current_year}{new_sequence:04d}'
+
 
 class InvoiceGetSerializer(serializers.ModelSerializer):
     tenancy = TenancyListSerializer(read_only=True)
