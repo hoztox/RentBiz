@@ -93,6 +93,7 @@ urlpatterns = [
     path('additional-charges/create/', AdditionalChargeCreateView.as_view(), name='additional-charges-create'),
     path('additional-charges/<int:pk>/', AdditionalChargeUpdateView.as_view(), name='additional-charges-update'),
     path('additional-charges/<int:pk>/delete/', AdditionalChargeDeleteView.as_view(), name='additional-charges-delete'),
+    path('additional-charges/export-csv/', AdditionalChargeExportCSVView.as_view(), name='additional-charges-export-csv'),
     
     
     # Invoice
@@ -100,6 +101,7 @@ urlpatterns = [
     path('invoices/company/<int:company_id>/', GetInvoicesByCompanyAPIView.as_view(), name='get-invoices-by-company'),
     path('invoice/delete/<int:invoice_id>/', DeleteInvoiceAPIView.as_view(), name='delete-invoice'),
     path('invoices/<int:pk>/', InvoiceDetailView.as_view(), name='invoice-detail'),
+    path('invoices/company/<int:company_id>/export-csv/', InvoiceExportCSVView.as_view(), name='export-invoices-csv'),
     
     
     

@@ -1,0 +1,14 @@
+
+
+{% block content %}
+<p>Dear {{ invoice.tenancy.tenant.tenant_name }},</p>
+
+<p>Please find attached your invoice #{{ invoice.invoice_number }} for {{ invoice.tenancy.unit.unit_name }} in {{ invoice.tenancy.building.building_name }}.</p>
+
+<p>The total amount due is {{ invoice.total_amount }}.</p>
+
+<p>If you have any questions about this invoice, please don't hesitate to contact us.</p>
+
+<p>Best regards,<br>
+{{ invoice.company.name }}</p>
+{% endblock %}

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        /* Add your attractive styling here */
+        body { font-family: Arial, sans-serif; line-height: 1.6; }
+        .invoice-header { background-color: #f8f9fa; padding: 20px; }
+        .invoice-details { margin: 20px 0; }
+        .items-table { width: 100%; border-collapse: collapse; }
+        .items-table th { background-color: #f1f1f1; text-align: left; padding: 8px; }
+        .items-table td { padding: 8px; border-bottom: 1px solid #ddd; }
+        .total-amount { font-weight: bold; font-size: 1.2em; }
+        .footer { margin-top: 30px; font-size: 0.9em; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="invoice-header">
+        <h1>Invoice #{{ invoice.invoice_number }}</h1>
+        <p>Date: {{ invoice.invoice_date|date:"F d, Y" }}</p>
+    </div>
+    
+    <div class="invoice-details">
+        <h2>Tenant Details</h2>
+        <p>{{ invoice.tenancy.tenant.tenant_name }}</p>
+        <p>{{ invoice.tenancy.tenant.address }}</p>
+        <p>{{ invoice.tenancy.tenant.email }}</p>
+    </div>
+    
+    <h2>Items</h2>
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th>Description</th>
+                <th>Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in invoice.items.all %}
+            <tr>
+                <td>{{ item.description }}</td>
+                <td>{{ item.amount }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    <div class="total-amount">
+        Total Amount: {{ invoice.total_amount }}
+    </div>
+    
+    <div class="footer">
+        <p>Thank you for your business!</p>
+        <p>{{ invoice.company.name }}</p>
+    </div>
+</body>
+</html>
