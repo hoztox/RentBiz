@@ -1076,9 +1076,27 @@ class TenantDetailView(APIView):
 
 class TenantByCompanyView(APIView):
     def get(self, request, company_id):
-        buildings = Tenant.objects.filter(company__id=company_id)
-        serializer = TenantGetSerializer(buildings, many=True)
-        return Response(serializer.data)
+        search_query = request.query_params.get('search', '').strip()
+        status_filter = request.query_params.get('status', '').strip().lower()
+
+        tenants = Tenant.objects.filter(company__id=company_id)
+
+        if search_query:
+            tenants = tenants.filter(
+                Q(tenant_name__icontains=search_query) |
+                Q(phone__icontains=search_query) |
+                Q(code__icontains=search_query) |
+                Q(created_at__icontains=search_query)|
+                Q(id_type__title__icontains=search_query)
+            )
+
+        if status_filter in ['active', 'inactive']:
+            tenants = tenants.filter(status__iexact=status_filter)
+
+        tenants = tenants.order_by('id')
+
+        return paginate_queryset(tenants,request,TenantGetSerializer)
+
     
 
 
