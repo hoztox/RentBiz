@@ -102,6 +102,10 @@ urlpatterns = [
     path('invoice/delete/<int:invoice_id>/', DeleteInvoiceAPIView.as_view(), name='delete-invoice'),
     path('invoices/<int:pk>/', InvoiceDetailView.as_view(), name='invoice-detail'),
     path('invoices/company/<int:company_id>/export-csv/', InvoiceExportCSVView.as_view(), name='export-invoices-csv'),
+
+    # PaymentSchedule
+    path('tenancies/<int:tenancy_id>/payment-schedules/', PaymentScheduleAPIView.as_view(), name='payment-schedule-list'),
+    path('tenancies/<int:tenancy_id>/payment-schedules/<int:schedule_id>/', PaymentScheduleAPIView.as_view(), name='payment-schedule-update'),
     
     
     

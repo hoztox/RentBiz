@@ -469,7 +469,7 @@ class PaymentSchedule(models.Model):
     status_choices = [
         ('pending', 'Pending'),
         ('paid', 'Paid') ,
-         ('invoice', 'Invoice')
+        ('invoice', 'Invoice')
        
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='pending')   
