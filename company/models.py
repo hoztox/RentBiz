@@ -327,9 +327,7 @@ class TenantDocumentType(models.Model):
     
     def __str__(self):
         return self.tenant.tenant_name if self.tenant.tenant_name else "Untitled Tenant"
-
-
-    
+  
 
 
 class ChargeCode(models.Model):
@@ -532,3 +530,24 @@ class Invoice(models.Model):
 
     def __str__(self):
         return f"Invoice {self.invoice_number} for {self.tenancy}"
+
+
+class InvoiceAutomationConfig(models.Model):
+    tenancy = models.ForeignKey('Tenancy', on_delete=models.CASCADE, related_name='invoice_configs')
+    days_before_due = models.PositiveIntegerField(
+        default=7,
+        help_text="Number of days before due date to generate and send invoice"
+    )
+    combine_charges = models.BooleanField(
+        default=False,
+        help_text="If True, combine PaymentSchedule and AdditionalCharge in one invoice. If False, send separate invoices."
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('tenancy',)
+
+    def __str__(self):
+        return f"Invoice Config for {self.tenancy} - {'Combined' if self.combine_charges else 'Separate'}"
