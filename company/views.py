@@ -2990,3 +2990,30 @@ class PaymentScheduleAPIView(APIView):
                 
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+class InvoiceConfigView(APIView):
+    def get(self, request, pk):
+        tenancy = get_object_or_404(Tenancy, pk=pk)
+        try:
+            config = InvoiceAutomationConfig.objects.get(tenancy=tenancy)
+            serializer = InvoiceAutomationConfigSerializer(config)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except InvoiceAutomationConfig.DoesNotExist:
+            return Response({
+                'error': 'No invoice configuration found for this tenancy. Please create a new configuration.'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+    def put(self, request, pk):
+        tenancy = get_object_or_404(Tenancy, pk=pk)
+        try:
+            config = InvoiceAutomationConfig.objects.get(tenancy=tenancy)
+        except InvoiceAutomationConfig.DoesNotExist:
+            config = InvoiceAutomationConfig(tenancy=tenancy)
+
+        serializer = InvoiceAutomationConfigSerializer(config, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

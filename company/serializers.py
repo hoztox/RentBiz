@@ -1077,3 +1077,9 @@ class InvoiceGetSerializer(serializers.ModelSerializer):
     class Meta:
         model = Invoice
         fields = '__all__'
+
+
+class InvoiceAutomationConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InvoiceAutomationConfig
+        fields = ['days_before_due', 'combine_charges', 'is_active']
