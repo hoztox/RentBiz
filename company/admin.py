@@ -27,4 +27,5 @@ admin.site.register(AdditionalCharge)
 
 
 admin.site.register(Invoice)
+admin.site.register(InvoiceAutomationConfig)
  
