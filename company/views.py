@@ -2780,8 +2780,7 @@ class DeleteInvoiceAPIView(APIView):
             return Response({
                 'success': False,
                 'message': f'Error deleting invoice: {str(e)}'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)          
             
             
 class InvoiceDetailView(APIView):

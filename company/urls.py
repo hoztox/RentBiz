@@ -103,6 +103,7 @@ urlpatterns = [
     path('invoices/<int:pk>/', InvoiceDetailView.as_view(), name='invoice-detail'),
     path('invoices/company/<int:company_id>/export-csv/', InvoiceExportCSVView.as_view(), name='export-invoices-csv'),
     path('tenancies/<int:pk>/invoice-config/', InvoiceConfigView.as_view(), name='invoice-config'),
+    
 
     # PaymentSchedule
     path('tenancies/<int:tenancy_id>/payment-schedules/', PaymentScheduleAPIView.as_view(), name='payment-schedule-list'),

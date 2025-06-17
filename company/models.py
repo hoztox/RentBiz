@@ -477,8 +477,6 @@ class PaymentSchedule(models.Model):
     tax = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
     
-  
-
     def __str__(self):
         return f"{self.tenancy} - {self.charge_type} - Due: {self.due_date}"
     
@@ -523,8 +521,8 @@ class Invoice(models.Model):
         ('paid', 'Paid'),
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='unpaid')
+    is_automated = models.BooleanField(default=False, help_text="Indicates if this invoice was generated automatically")
 
-    
     payment_schedules = models.ManyToManyField(PaymentSchedule, blank=True, related_name='invoices')
     additional_charges = models.ManyToManyField(AdditionalCharge, blank=True, related_name='invoices')
 
