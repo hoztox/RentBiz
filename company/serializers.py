@@ -939,24 +939,19 @@ class TaxesSerializer(serializers.ModelSerializer):
  
 
 
-
-from rest_framework import serializers
-from django.db import transaction
-from decimal import Decimal
-from datetime import datetime
-from .models import Invoice, Tenancy, PaymentSchedule, AdditionalCharge, Company, Users
-
 class InvoiceItemSerializer(serializers.Serializer):
-    charge_type = serializers.CharField(max_length=255, required=False)
-    description = serializers.CharField(max_length=255, required=False)
-    due_date = serializers.DateField(required=False, allow_null=True)
+    charge_type = serializers.CharField(max_length=255)
+    description = serializers.CharField(max_length=255)
+    due_date = serializers.DateField()
     amount = serializers.DecimalField(max_digits=12, decimal_places=2)
-    paid_amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, default=0)
-    tax = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, default=0)
+    tax = serializers.DecimalField(max_digits=12, decimal_places=2)
     total = serializers.DecimalField(max_digits=15, decimal_places=2)
     type = serializers.ChoiceField(choices=['payment_schedule', 'additional_charge'])
-    schedule_id = serializers.IntegerField(required=False, allow_null=True)
-    charge_id = serializers.IntegerField(required=False, allow_null=True)
+    schedule_id = serializers.IntegerField(required=False)
+    charge_id = serializers.IntegerField(required=False)
+    company = serializers.IntegerField(required=False)
+    user = serializers.IntegerField(required=False)
+
 
 class InvoiceSerializer(serializers.ModelSerializer):
     tenancy = serializers.PrimaryKeyRelatedField(queryset=Tenancy.objects.all())
@@ -969,8 +964,9 @@ class InvoiceSerializer(serializers.ModelSerializer):
     items = InvoiceItemSerializer(many=True)
     total_amount = serializers.DecimalField(max_digits=15, decimal_places=2)
 
-    payment_schedules = serializers.SerializerMethodField()
-    additional_charges = serializers.SerializerMethodField()
+    # Return nested M2M relations
+    payment_schedules = PaymentScheduleSerializer(many=True, read_only=True)
+    additional_charges = AdditionalChargeSerializer(many=True, read_only=True)
 
     class Meta:
         model = Invoice
@@ -979,14 +975,6 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'items', 'total_amount', 'company', 'user',
             'payment_schedules', 'additional_charges'
         ]
-
-    def get_payment_schedules(self, obj):
-        from .serializers import PaymentScheduleSerializer
-        return PaymentScheduleSerializer(obj.payment_schedules.all(), many=True).data
-
-    def get_additional_charges(self, obj):
-        from .serializers import AdditionalChargeSerializer
-        return AdditionalChargeSerializer(obj.additional_charges.all(), many=True).data
 
     def validate(self, data):
         tenancy = data.get('tenancy')
@@ -997,45 +985,11 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if not items:
             raise serializers.ValidationError({"items": "At least one item is required."})
 
-        # Validate total_amount matches sum of item totals (new payment amounts)
-        calculated_total = sum(Decimal(str(item['paid_amount'])) for item in items)
-        if calculated_total != Decimal(str(data.get('total_amount'))):
+        calculated_total = sum(item['total'] for item in items)
+        if calculated_total != data.get('total_amount'):
             raise serializers.ValidationError({
                 "total_amount": f"Total amount ({calculated_total}) does not match the provided total ({data.get('total_amount')})."
             })
-
-        # Validate paid_amount doesn't exceed remaining balance
-        for item in items:
-            if item['type'] == 'payment_schedule' and item.get('schedule_id'):
-                try:
-                    schedule = PaymentSchedule.objects.get(id=item['schedule_id'], tenancy=tenancy)
-                    remaining_balance = schedule.amount - (schedule.paid_amount or 0)
-                    new_payment = Decimal(str(item.get('paid_amount', 0)))
-                    if new_payment > remaining_balance:
-                        raise serializers.ValidationError({
-                            "items": f"Paid amount {new_payment} exceeds remaining balance {remaining_balance} for PaymentSchedule ID {item['schedule_id']}."
-                        })
-                    if new_payment < 0:
-                        raise serializers.ValidationError({
-                            "items": f"Paid amount cannot be negative for PaymentSchedule ID {item['schedule_id']}."
-                        })
-                except PaymentSchedule.DoesNotExist:
-                    raise serializers.ValidationError(f"PaymentSchedule ID {item['schedule_id']} not found.")
-            elif item['type'] == 'additional_charge' and item.get('charge_id'):
-                try:
-                    charge = AdditionalCharge.objects.get(id=item['charge_id'], tenancy=tenancy)
-                    remaining_balance = charge.amount - (charge.paid_amount or 0)
-                    new_payment = Decimal(str(item.get('paid_amount', 0)))
-                    if new_payment > remaining_balance:
-                        raise serializers.ValidationError({
-                            "items": f"Paid amount {new_payment} exceeds remaining balance {remaining_balance} for AdditionalCharge ID {item['charge_id']}."
-                        })
-                    if new_payment < 0:
-                        raise serializers.ValidationError({
-                            "items": f"Paid amount cannot be negative for AdditionalCharge ID {item['charge_id']}."
-                        })
-                except AdditionalCharge.DoesNotExist:
-                    raise serializers.ValidationError(f"AdditionalCharge ID {item['charge_id']} not found.")
 
         invoice_date = data.get('in_date')
         if invoice_date == '':
@@ -1070,24 +1024,21 @@ class InvoiceSerializer(serializers.ModelSerializer):
                 if item['type'] == 'payment_schedule' and item.get('schedule_id'):
                     try:
                         schedule = PaymentSchedule.objects.get(id=item['schedule_id'], tenancy=invoice.tenancy)
-                        current_paid_amount = Decimal(str(schedule.paid_amount or 0))
-                        new_payment = Decimal(str(item.get('paid_amount', 0)))
-                        schedule.paid_amount = current_paid_amount + new_payment
-                        schedule.save()  # Triggers save method to update balance and status
+                        schedule.status = 'invoice'
+                        schedule.save()
                         payment_schedule_ids.append(schedule.id)
                     except PaymentSchedule.DoesNotExist:
-                        raise serializers.ValidationError(f"PaymentSchedule ID {item['schedule_id']} not found or invalid.")
+                        raise ValidationError(f"PaymentSchedule ID {item['schedule_id']} not found or invalid.")
                 elif item['type'] == 'additional_charge' and item.get('charge_id'):
                     try:
                         charge = AdditionalCharge.objects.get(id=item['charge_id'], tenancy=invoice.tenancy)
-                        current_paid_amount = Decimal(str(charge.paid_amount or 0))
-                        new_payment = Decimal(str(item.get('paid_amount', 0)))
-                        charge.paid_amount = current_paid_amount + new_payment
-                        charge.save()  # Triggers save method to update balance and status
+                        charge.status = 'invoice'
+                        charge.save()
                         additional_charge_ids.append(charge.id)
                     except AdditionalCharge.DoesNotExist:
-                        raise serializers.ValidationError(f"AdditionalCharge ID {item['charge_id']} not found or invalid.")
+                        raise ValidationError(f"AdditionalCharge ID {item['charge_id']} not found or invalid.")
 
+            # Set many-to-many fields
             if payment_schedule_ids:
                 invoice.payment_schedules.set(payment_schedule_ids)
             if additional_charge_ids:

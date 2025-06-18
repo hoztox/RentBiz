@@ -466,61 +466,45 @@ class PaymentSchedule(models.Model):
     due_date = models.DateField(null=True, blank=True)   
     status_choices = [
         ('pending', 'Pending'),
-       
+        ('paid', 'Paid') ,
         ('invoice', 'Invoice')
+       
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='pending')   
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    paid_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, null=True, blank=True)
-    balance = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    # VAT will remove after testing
     vat = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     tax = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
-
-    def save(self, *args, **kwargs):
-        if self.amount is not None:
-            self.balance = self.amount - (self.paid_amount or 0)
-            self.total = self.amount  
-            if self.paid_amount >= self.amount and self.paid_amount > 0:
-                self.status = 'invoice'  
-            else:
-                self.status = 'pending'  
-        super().save(*args, **kwargs)
-
+    
     def __str__(self):
         return f"{self.tenancy} - {self.charge_type} - Due: {self.due_date}"
+    
+ 
 
 class AdditionalCharge(models.Model):
     tenancy = models.ForeignKey(Tenancy, on_delete=models.CASCADE, related_name='additional_charges', null=True, blank=True)
     charge_type = models.ForeignKey(Charges, on_delete=models.CASCADE, related_name='chvcar', null=True, blank=True)   
     reason = models.CharField(max_length=255, null=True, blank=True)
     due_date = models.DateField(null=True, blank=True)
-    in_date = models.DateField(null=True, blank=True)
+    in_date  = models.DateField(null=True, blank=True)
     status_choices = [
         ('pending', 'Pending'),
-      
-        ('invoice', 'Invoice')
+        ('paid', 'Paid') ,
+        ('invoice', 'Invoice') 
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='pending')   
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    paid_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, null=True, blank=True)  # New field
-    balance = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)  # New field
+    # VAT will remove after testing
     vat = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     tax = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     total = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
 
-    def save(self, *args, **kwargs):
-        if self.amount is not None:
-            self.balance = self.amount - (self.paid_amount or 0)
-            self.total = self.amount  # Total is the original amount
-            if self.paid_amount >= self.amount and self.paid_amount > 0:
-                self.status = 'invoice'  # Fully paid
-            else:
-                self.status = 'pending'  # Partially paid or no payment
-        super().save(*args, **kwargs)
-
+   
     def __str__(self):
         return f"{self.tenancy} - {self.charge_type} - Due: {self.due_date}"
+
+
 
 class Invoice(models.Model):
     user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='invoice_user', null=True, blank=True) 
@@ -530,12 +514,10 @@ class Invoice(models.Model):
     in_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     total_amount = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
-    paid_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, null=True, blank=True)
-    balance = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
 
+  
     status_choices = [
         ('unpaid', 'Unpaid'),
-        
         ('paid', 'Paid'),
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='unpaid')
@@ -543,8 +525,6 @@ class Invoice(models.Model):
 
     payment_schedules = models.ManyToManyField(PaymentSchedule, blank=True, related_name='invoices')
     additional_charges = models.ManyToManyField(AdditionalCharge, blank=True, related_name='invoices')
-
- 
 
     def __str__(self):
         return f"Invoice {self.invoice_number} for {self.tenancy}"
