@@ -970,9 +970,26 @@ class CurrencyDetailView(APIView):
     
 class CurrencyByCompanyAPIView(APIView):
     def get(self, request, company_id):
+        search_query = request.query_params.get('search', '').strip()
+        status_filter = request.query_params.get('status', '').strip().lower()
         unit_types = Currency.objects.filter(company_id=company_id)
-        serializer = CurrencySerializer(unit_types, many=True)
-        return Response(serializer.data)
+
+        if search_query:
+            unit_types = unit_types.filter(
+                Q(country__icontains=search_query) |
+                Q(currency__icontains=search_query) |
+                Q(currency_code__icontains=search_query) |
+                Q(minor_unit__icontains=search_query)
+              
+            )
+
+        if status_filter in ['active', 'inactive']:
+            unit_types = unit_types.filter(status__iexact=status_filter)
+
+        unit_types= unit_types.order_by('id')
+
+        return paginate_queryset(unit_types,request,CurrencySerializer)
+
 
 
 class TenantCreateView(APIView):
