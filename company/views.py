@@ -3016,3 +3016,206 @@ class InvoiceConfigView(APIView):
             serializer.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AutoGenerateInvoiceAPIView(APIView):
+    def post(self, request):
+        """Trigger automatic invoice generation for all configured tenancies"""
+        try:
+            results = self.generate_invoices()
+            return Response({
+                'success': True,
+                'message': 'Automatic invoice generation completed',
+                'results': results
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Error in auto invoice generation: {str(e)}")
+            return Response({
+                'success': False,
+                'message': f'Failed to generate invoices: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def generate_invoices(self):
+        """Generate invoices based on automation configurations"""
+        results = []
+        today = datetime.now().date()
+        
+        for config in InvoiceAutomationConfig.objects.filter(is_active=True):
+            tenancy = config.tenancy
+            due_date_threshold = today + timedelta(days=config.days_before_due)
+            
+            try:
+                with transaction.atomic():
+                    invoice_data = self.prepare_invoice_data(
+                        tenancy, 
+                        due_date_threshold, 
+                        config.combine_charges
+                    )
+                    
+                    # Log invoice_data for debugging
+                    logger.debug(f"Invoice data for tenancy {tenancy.id}: {invoice_data}")
+                    
+                    if invoice_data['items']:
+                        serializer = AutoInvoiceSerializer(data=invoice_data)
+                        if serializer.is_valid():
+                            invoice = serializer.save(is_automated=True)
+                            self.send_invoice_email(invoice)
+                            
+                            results.append({
+                                'tenancy_id': tenancy.id,
+                                'invoice_id': invoice.id,
+                                'invoice_number': invoice.invoice_number,
+                                'status': 'created'
+                            })
+                        else:
+                            logger.error(f"Serializer errors for tenancy {tenancy.id}: {serializer.errors}")
+                            results.append({
+                                'tenancy_id': tenancy.id,
+                                'status': 'failed',
+                                'errors': serializer.errors
+                            })
+                    else:
+                        results.append({
+                            'tenancy_id': tenancy.id,
+                            'status': 'skipped',
+                            'message': 'No invoice items found'
+                        })
+            except Exception as e:
+                logger.error(f"Error processing tenancy {tenancy.id}: {str(e)}", exc_info=True)
+                results.append({
+                    'tenancy_id': tenancy.id,
+                    'status': 'failed',
+                    'error': str(e)
+                })
+                
+        return results
+
+    def prepare_invoice_data(self, tenancy, due_date_threshold, combine_charges):
+        """Prepare invoice data based on configuration"""
+        items = []
+        total_amount = 0
+        
+        # Collect payment schedules
+        payment_schedules = PaymentSchedule.objects.filter(
+            tenancy=tenancy,
+            status='pending',
+            due_date__lte=due_date_threshold,
+            due_date__gte=datetime.now().date()
+        )
+        
+        for schedule in payment_schedules:
+            items.append({
+                'type': 'payment_schedule',
+                'schedule_id': schedule.id,
+                'description': schedule.reason or str(schedule.charge_type),
+                'charge_type': str(schedule.charge_type),
+                'due_date': schedule.due_date,
+                'amount': schedule.amount,
+                'vat': schedule.vat or 0,
+                'tax': schedule.tax or 0,
+                'total': schedule.total or schedule.amount
+            })
+            total_amount += schedule.total or schedule.amount
+
+        # Collect additional charges
+        if combine_charges:
+            additional_charges = AdditionalCharge.objects.filter(
+                tenancy=tenancy,
+                status='pending',
+                due_date__lte=due_date_threshold,
+                due_date__gte=datetime.now().date()
+            )
+            
+            for charge in additional_charges:
+                items.append({
+                    'type': 'additional_charge',
+                    'charge_id': charge.id,
+                    'description': charge.reason or str(charge.charge_type),
+                    'charge_type': str(charge.charge_type),
+                    'due_date': charge.due_date,
+                    'amount': charge.amount,
+                    'vat': charge.vat or 0,
+                    'tax': charge.tax or 0,
+                    'total': charge.total or charge.amount
+                })
+                total_amount += charge.total or charge.amount
+
+        invoice_data = {
+            'tenancy': tenancy.id,
+            'in_date': datetime.now().date(),  # Current date as invoice date
+            'end_date': due_date_threshold,
+            'building_name': tenancy.unit.building.building_name if tenancy.unit else '',
+            'unit_name': tenancy.unit.unit_name if tenancy.unit else '',
+            'items': items,
+            'total_amount': total_amount,
+            'company': tenancy.company.id if tenancy.company else None,
+            'user': tenancy.tenant.id if tenancy.tenant and tenancy.tenant.id in Users.objects.values_list('id', flat=True) else None
+        }
+        
+        logger.debug(f"Prepared invoice data for tenancy {tenancy.id}: {invoice_data}")
+        return invoice_data
+
+    def send_invoice_email(self, invoice):
+        """Send invoice email with PDF attachment"""
+        try:
+            html_content = render_to_string('company/invoice_body.html', {'invoice': invoice})
+            pdf_content = render_to_string('company/invoice_pdf.html', {'invoice': invoice})
+            pdf_file = BytesIO()
+            pisa.CreatePDF(pdf_content, dest=pdf_file)
+            
+            subject = f"Invoice #{invoice.invoice_number} from {invoice.company.company_name}"
+            from_email = settings.DEFAULT_FROM_EMAIL
+            to_email = invoice.tenancy.tenant.email
+            
+            email = EmailMultiAlternatives(
+                subject=subject,
+                body=html_content,
+                from_email=from_email,
+                to=[to_email]
+            )
+            email.attach_alternative(html_content, "text/html")
+            email.attach(
+                filename=f"Invoice_{invoice.invoice_number}.pdf",
+                content=pdf_file.getvalue(),
+                mimetype='application/pdf'
+            )
+            
+            email.send()
+            logger.info(f"Invoice email sent successfully for invoice {invoice.id}")
+        except Exception as e:
+            logger.error(f"Failed to send invoice email for invoice {invoice.id}: {str(e)}", exc_info=True)
+
+
+class AutoInvoiceListAPIView(APIView):
+    def get(self, request, company_id):
+        """List all automatically generated invoices for a specific company"""
+        try:
+            # Filter auto-generated invoices by company_id
+            queryset = Invoice.objects.filter(
+                is_automated=True, 
+                company_id=company_id
+            )
+
+            # Handle search query
+            search = request.query_params.get('search', '')
+            if search:
+                queryset = queryset.filter(
+                    Q(invoice_number__icontains=search) |
+                    Q(in_date__icontains=search) |
+                    Q(tenancy__tenancy_code__icontains=search) |
+                    Q(tenancy__tenant__tenant_name__icontains=search) |
+                    Q(total_amount__icontains=search)
+                )
+
+            # Handle status filter
+            status_filter = request.query_params.get('status', '')
+            if status_filter:
+                queryset = queryset.filter(status=status_filter)
+
+            # Apply pagination
+            return paginate_queryset(queryset, request, InvoiceGetSerializer)
+        except Exception as e:
+            return Response(
+                {'success': False, 'message': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
