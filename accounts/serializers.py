@@ -30,3 +30,16 @@ class CompanySerializer(serializers.ModelSerializer):
         else:
             instance.save()
         return instance
+
+
+class StateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = State
+        fields = ['id', 'name']
+
+class CountrySerializer(serializers.ModelSerializer):
+    states = StateSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Country
+        fields = ['id', 'name', 'code', 'states']

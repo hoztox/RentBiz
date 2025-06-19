@@ -12,19 +12,25 @@ urlpatterns = [
     path('users/create/', UserCreateAPIView.as_view(), name='user-create'),
     path('users/company/<int:company_id>/', UserListByCompanyAPIView.as_view(), name='user-list-by-company'),
     path('users/<int:user_id>/', UserDetailAPIView.as_view(), name='user-detail'),
+    path('user/<int:user_id>/details/', UserDetailView.as_view(), name='user-detail'),
     
-    
-    # Building Properties
+
+    # Building Properties                                                                           
     path('buildings/create/', BuildingCreateView.as_view(), name='building-create'),
     path('buildings/<int:pk>/', BuildingDetailView.as_view(), name='building-detail'),
     path('buildings/company/<int:company_id>/', BuildingByCompanyView.as_view(), name='building-by-company'),
+    path('buildings/vacant/<int:company_id>/', BuildingsWithVacantUnitsView.as_view(), name='buildings-with-vacant-units'),
+    path('buildings/occupied/<int:company_id>/', BuildingsWithOccupiedUnitsView.as_view(), name='buildings-with-vacant-units'),
+    
     
     # unit Properties
     path('units/create/', UnitCreateView.as_view(), name='unit-create'),
     path('units/<int:pk>/', UnitDetailView.as_view(), name='unit-detail'),
-    path('units/<int:pk>/edit/', UnitEditView.as_view(), name='unit-edit'),
+    path('units/<int:id>/edit/', UnitEditAPIView.as_view(), name='unit-edit'),
     path('units/company/<int:company_id>/', UnitsByCompanyView.as_view(), name='units-by-company'),
-    path('units/by-building/<int:company_id>/', UnitsByCompanyAPIView.as_view(), name='units-by-company'),
+    path('units/<int:building_id>/vacant-units/', VacantUnitsByBuildingView.as_view(), name='vacant-units-by-building'),
+    path('units/<int:building_id>/occupied-units/', OccupiedUnitsByBuildingView.as_view(), name='vacant-units-by-building'),
+   
     
     # unit type in masters
     path('unit-types/create/', UnitTypeListCreateAPIView.as_view(), name='unit-type-list-create'),
@@ -64,6 +70,8 @@ urlpatterns = [
     path('charges/company/<int:company_id>/', ChargesByCompanyAPIView.as_view(), name='unit-type-by-company'),
     
     # Tenancy
+    path('tenancies/preview-payment-schedule/', PaymentSchedulePreviewView.as_view(), name='payment-schedule-preview'),
+    path('tenancies/preview-additional-charge-tax/', AdditionalChargeTaxPreviewView.as_view(), name='preview-additional-charge-tax'),
     path('tenancies/create/', TenancyCreateView.as_view(), name='tenancy-create'),
     path('tenancies/<int:pk>/', TenancyDetailView.as_view(), name='tenancy-detail'),
     path('tenancies/company/<int:company_id>/', TenancyByCompanyAPIView.as_view(), name='tenancies-by-company'),
@@ -71,8 +79,40 @@ urlpatterns = [
     path('tenancies/occupied/<int:company_id>/', ActiveTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
     path('tenancies/termination/<int:company_id>/', TerminatiionTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
     path('tenancies/close/<int:company_id>/', CloseTenanciesByCompanyAPIView.as_view(), name='pending-tenancies-by-company'),
-   
+    path('tenancy/<int:pk>/confirm/', ConfirmTenancyView.as_view(), name='confirm-tenancy'),
+    path('tenancy/<int:tenancy_id>/renew/', TenancyRenewalView.as_view(), name='tenancy-renew'),
+    path('tenancy/<int:tenancy_id>/download-pdf/', TenancyHTMLPDFView.as_view(), name='tenancy-download-pdf'),
     
+    
+    #Taxes
+    path('taxes/<int:company_id>/<int:tax_id>/', TaxesAPIView.as_view(), name='taxes'),
+    path('taxes/<int:company_id>/', TaxesAPIView.as_view(), name='taxes'),
+
+    # AdditionalCharge
+    path('additional-charges/', AdditionalChargeListView.as_view(), name='additional-charges-list'),
+    path('additional-charges/create/', AdditionalChargeCreateView.as_view(), name='additional-charges-create'),
+    path('additional-charges/<int:pk>/', AdditionalChargeUpdateView.as_view(), name='additional-charges-update'),
+    path('additional-charges/<int:pk>/delete/', AdditionalChargeDeleteView.as_view(), name='additional-charges-delete'),
+    path('additional-charges/export-csv/', AdditionalChargeExportCSVView.as_view(), name='additional-charges-export-csv'),
+    
+    
+    # Invoice
+    path('invoice/create/', CreateInvoiceAPIView.as_view(), name='create-invoice'),
+    path('invoices/company/<int:company_id>/', GetInvoicesByCompanyAPIView.as_view(), name='get-invoices-by-company'),
+    path('invoice/delete/<int:invoice_id>/', DeleteInvoiceAPIView.as_view(), name='delete-invoice'),
+    path('invoices/<int:pk>/', InvoiceDetailView.as_view(), name='invoice-detail'),
+    path('invoices/company/<int:company_id>/export-csv/', InvoiceExportCSVView.as_view(), name='export-invoices-csv'),
+    path('tenancies/<int:pk>/invoice-config/', InvoiceConfigView.as_view(), name='invoice-config'),
+    path('invoices/auto-generate/', AutoGenerateInvoiceAPIView.as_view(), name='auto-generate-invoices'),
+    path('invoices/auto-generated/<int:company_id>/', AutoInvoiceListAPIView.as_view(), name='list-auto-generated-invoices'),
+
+
+    # PaymentSchedule
+    path('tenancies/<int:tenancy_id>/payment-schedules/', PaymentScheduleAPIView.as_view(), name='payment-schedule-list'),
+    path('tenancies/<int:tenancy_id>/payment-schedules/<int:schedule_id>/', PaymentScheduleAPIView.as_view(), name='payment-schedule-update'),
+
+
+
 ]
 
 

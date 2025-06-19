@@ -35,6 +35,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(auto_now_add=True)
 
+
     objects = UserManager()
 
     USERNAME_FIELD = 'email'
@@ -59,6 +60,23 @@ class User(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return self.email
 
+
+class Country(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    code = models.CharField(max_length=10, unique=True, blank=True, null=True)
+
+    def __str__(self):
+        return self.name
+
+class State(models.Model):
+    name = models.CharField(max_length=100)
+    country = models.ForeignKey(Country, on_delete=models.CASCADE, related_name='states')
+
+    class Meta:
+        unique_together = ('name', 'country')
+
+    def __str__(self):
+        return self.name
 
 
 class Company(models.Model):
@@ -90,4 +108,4 @@ class Company(models.Model):
         return check_password(raw_password, self.password)
 
     def __str__(self):
-        return self.company_name
+        return str(self.company_name or "Unnamed Company")
