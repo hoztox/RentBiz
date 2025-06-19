@@ -2679,7 +2679,6 @@ class CreateInvoiceAPIView(APIView):
                 'company': invoice.company_id,
                 'user': invoice.user_id,
                 'total_amount': str(invoice.total_amount),
-                'paid_amount': str(invoice.paid_amount),
                 'status': invoice.status
             })
             return Response({
@@ -2689,7 +2688,6 @@ class CreateInvoiceAPIView(APIView):
                     'id': invoice.id,
                     'invoice_number': invoice.invoice_number,
                     'total_amount': str(invoice.total_amount),
-                    'paid_amount': str(invoice.paid_amount),
                     'status': invoice.status
                 }
             }, status=status.HTTP_201_CREATED)
