@@ -1,0 +1,92 @@
+from django.db import models
+from django.utils import timezone
+from company.models import Invoice, PaymentSchedule, AdditionalCharge
+from company.models import *
+# Create your models here.
+
+
+class Collection(models.Model):
+    invoice = models.ForeignKey(
+        Invoice, 
+        on_delete=models.CASCADE, 
+        related_name='collections', 
+        help_text="The invoice this collection applies to"
+    )
+
+    amount = models.DecimalField(
+        max_digits=12, 
+        decimal_places=2, 
+        help_text="Amount collected in this transaction"
+    )
+    collection_date = models.DateField(
+        default=timezone.now, 
+        help_text="Date the collection was made"
+    )
+    collection_mode_choices = [
+        ('cash', 'Cash'),
+        ('bank_transfer', 'Bank Transfer'),
+        ('credit_card', 'Credit Card'),
+        ('cheque', 'Cheque'),
+        ('online_payment', 'Online Payment'),
+    ]
+    collection_mode = models.CharField(
+        max_length=20, 
+        choices=collection_mode_choices, 
+        default='cash',
+        help_text="Mode of payment"
+    )
+    status_choices = [
+        ('completed', 'Completed'),
+        ('partially_collected', 'Partially Collected'),
+        ('failed', 'Failed'),
+    ]
+    status = models.CharField(
+        max_length=20, 
+        choices=status_choices, 
+        default='completed',
+        help_text="Status of the collection"
+    )
+    reference_number = models.CharField(
+        max_length=100, 
+        null=True, 
+        blank=True, 
+        help_text="Reference number for the payment (e.g., transaction ID)"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+
+class Expense(models.Model):
+    
+    user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='expense_user', null=True, blank=True) 
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='expense_comp', null=True, blank=True)
+    EXPENSE_TYPE_CHOICES = [
+        ('general', 'General'),
+        ('tenancy', 'Tenancy'),
+    ]
+
+    expense_type = models.CharField(
+        max_length=20,
+        choices=EXPENSE_TYPE_CHOICES,
+        default='general'
+    )
+    status_choices = [
+        ('pending', 'pending'),
+        ('paid', 'Paid'),
+    ]
+    status = models.CharField(max_length=20, choices=status_choices, default='pending')
+    tenancy = models.ForeignKey(Tenancy, on_delete=models.CASCADE, related_name='tenancy_exp', null=True, blank=True)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='tenant_exp', null=True, blank=True)
+    building = models.ForeignKey(Building, on_delete=models.CASCADE, related_name='building_exp', null=True, blank=True)
+    unit = models.ForeignKey(Units, on_delete=models.CASCADE, related_name='unit_exp', null=True, blank=True)
+    charge_type = models.ForeignKey(Charges, on_delete=models.CASCADE, related_name='charge_exp', null=True, blank=True)
+    amount = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    date = models.DateField(null=True, blank=True)
+    tax = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    total_amount = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.expense_type if self.expense_type else "Untitled Expense"
