@@ -824,11 +824,35 @@ class UnitTypeListCreateAPIView(APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)   
     
+from datetime import datetime
+from django.db.models import Q
+from rest_framework.views import APIView
+
 class UnitTypeByCompanyAPIView(APIView):
     def get(self, request, company_id):
         unit_types = UnitType.objects.filter(company_id=company_id)
-        serializer = UnitTypeSerializer(unit_types, many=True)
-        return Response(serializer.data)
+        search_query = request.query_params.get('search', '').strip()
+        status_filter = request.query_params.get('status', '').strip().lower()
+
+        if search_query:
+            try:
+                # Expecting format: "12 Jun 2025"
+                parsed_date = datetime.strptime(search_query, "%d %b %Y").date()
+                unit_types = unit_types.filter(created_at__date=parsed_date)
+            except ValueError:
+                # Not a valid date format, fallback to text-based search
+                unit_types = unit_types.filter(
+                    Q(title__icontains=search_query) |
+                    Q(created_at__icontains=search_query)
+                )
+
+        if status_filter in ['shop', 'renovation', 'vacant', 'disputed']:
+            unit_types = unit_types.filter(unit_status__iexact=status_filter)
+
+        unit_types = unit_types.order_by('id')
+        return paginate_queryset(unit_types, request, UnitTypeSerializer)
+
+       
     
  
 class UnitTypeDetailAPIView(APIView):
