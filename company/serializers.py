@@ -934,11 +934,6 @@ class TaxesSerializer(serializers.ModelSerializer):
 
  
 
-
-
- 
-
-
 class InvoiceItemSerializer(serializers.Serializer):
     charge_type = serializers.CharField(max_length=255)
     description = serializers.CharField(max_length=255)
