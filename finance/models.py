@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils import timezone
 from company.models import Invoice, PaymentSchedule, AdditionalCharge
-
+from company.models import *
 # Create your models here.
 
 
@@ -54,3 +54,39 @@ class Collection(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+
+class Expense(models.Model):
+    
+    user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='expense_user', null=True, blank=True) 
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='expense_comp', null=True, blank=True)
+    EXPENSE_TYPE_CHOICES = [
+        ('general', 'General'),
+        ('tenancy', 'Tenancy'),
+    ]
+
+    expense_type = models.CharField(
+        max_length=20,
+        choices=EXPENSE_TYPE_CHOICES,
+        default='general'
+    )
+    status_choices = [
+        ('pending', 'pending'),
+        ('paid', 'Paid'),
+    ]
+    status = models.CharField(max_length=20, choices=status_choices, default='pending')
+    tenancy = models.ForeignKey(Tenancy, on_delete=models.CASCADE, related_name='tenancy_exp', null=True, blank=True)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='tenant_exp', null=True, blank=True)
+    building = models.ForeignKey(Building, on_delete=models.CASCADE, related_name='building_exp', null=True, blank=True)
+    unit = models.ForeignKey(Units, on_delete=models.CASCADE, related_name='unit_exp', null=True, blank=True)
+    charge_type = models.ForeignKey(Charges, on_delete=models.CASCADE, related_name='charge_exp', null=True, blank=True)
+    amount = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    date = models.DateField(null=True, blank=True)
+    tax = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    total_amount = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.expense_type if self.expense_type else "Untitled Expense"

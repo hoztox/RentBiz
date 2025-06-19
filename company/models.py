@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.hashers import make_password, check_password
 from accounts.models import *
 from decimal import Decimal
+from datetime import date
 
 
 
@@ -549,3 +550,6 @@ class InvoiceAutomationConfig(models.Model):
 
     def __str__(self):
         return f"Invoice Config for {self.tenancy} - {'Combined' if self.combine_charges else 'Separate'}"
+
+
+

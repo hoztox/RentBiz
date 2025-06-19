@@ -110,8 +110,7 @@ urlpatterns = [
     # PaymentSchedule
     path('tenancies/<int:tenancy_id>/payment-schedules/', PaymentScheduleAPIView.as_view(), name='payment-schedule-list'),
     path('tenancies/<int:tenancy_id>/payment-schedules/<int:schedule_id>/', PaymentScheduleAPIView.as_view(), name='payment-schedule-update'),
-
-
+   
 
 ]
 
