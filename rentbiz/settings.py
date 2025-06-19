@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'accounts',
     'company',
+    'finance',
     'django_celery_beat',
     'django_celery_results',
 ]
