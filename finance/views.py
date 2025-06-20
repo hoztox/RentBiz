@@ -69,5 +69,7 @@ class CreateCollectionAPIView(APIView):
             if total_collected >= invoice.total_amount:
                 invoice.status = 'paid'
                 invoice.save()
+            print(f"Invoice status updated: {invoice.status}")  # Debugging print statement
             return Response(serializer.data, status=status.HTTP_201_CREATED)
+        print(f"Serializer errors: {serializer.errors}")  # Debugging print statement
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
