@@ -9,6 +9,16 @@ from django.conf import settings
 from django.http import HttpResponse, StreamingHttpResponse
 from django.db.models import Q
 from django.utils import timezone
+from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+import logging
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
+
+try:
+    amount = Decimal('invalid')  # This will raise InvalidOperation
+except InvalidOperation:
+    print("Invalid decimal input.")
 
 # ------------------------------------------------------------------
 # REST Framework imports  
@@ -31,6 +41,7 @@ import uuid
 from urllib.parse import quote
 from collections import defaultdict
 import re
+from django.db import IntegrityError
 
 # ------------------------------------------------------------------
 # Third-Party imports  
@@ -2679,7 +2690,6 @@ class CreateInvoiceAPIView(APIView):
                 'company': invoice.company_id,
                 'user': invoice.user_id,
                 'total_amount': str(invoice.total_amount),
-                'paid_amount': str(invoice.paid_amount),
                 'status': invoice.status
             })
             return Response({
@@ -2689,7 +2699,6 @@ class CreateInvoiceAPIView(APIView):
                     'id': invoice.id,
                     'invoice_number': invoice.invoice_number,
                     'total_amount': str(invoice.total_amount),
-                    'paid_amount': str(invoice.paid_amount),
                     'status': invoice.status
                 }
             }, status=status.HTTP_201_CREATED)
@@ -3221,3 +3230,10 @@ class AutoInvoiceListAPIView(APIView):
                 {'success': False, 'message': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+            
+            
+            
+ 
+
+ 
+

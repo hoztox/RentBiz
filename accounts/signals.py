@@ -15,7 +15,7 @@ def setup_periodic_tasks(sender, **kwargs):
 
         # Create a daily schedule
         schedule, _ = IntervalSchedule.objects.get_or_create(
-            every=1,
+            every= 1 ,
             period=IntervalSchedule.DAYS,
         )
 

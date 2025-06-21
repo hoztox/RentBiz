@@ -15,6 +15,7 @@ admin.site.register(MasterDocumentType)
 admin.site.register(IDType)
 admin.site.register(ChargeCode)
 admin.site.register(Charges)
+admin.site.register(Taxes)
 
 admin.site.register(Currency)
 
@@ -28,4 +29,5 @@ admin.site.register(AdditionalCharge)
 
 admin.site.register(Invoice)
 admin.site.register(InvoiceAutomationConfig)
+
  
