@@ -835,9 +835,7 @@ class UnitTypeListCreateAPIView(APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)   
     
-from datetime import datetime
-from django.db.models import Q
-from rest_framework.views import APIView
+
 
 class UnitTypeByCompanyAPIView(APIView):
     def get(self, request, company_id):
