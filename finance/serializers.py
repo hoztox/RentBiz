@@ -6,7 +6,7 @@ from .models import *
 from decimal import Decimal
 from company.serializers import *
 from company.models import *
-
+from django.db.models import Sum
 from django.core.exceptions import ValidationError
 
 
@@ -80,3 +80,40 @@ class ExpenseGetSerializer(serializers.ModelSerializer):
     class Meta:
         model = Expense
         fields = '__all__'
+        
+class InvoiceSerializer(serializers.ModelSerializer):
+    tenancy_name = serializers.CharField(source='tenancy.__str__', read_only=True)
+    
+    class Meta:
+        model = Invoice
+        fields = ['id', 'invoice_number', 'tenancy', 'tenancy_name', 'total_amount', 'status', 'in_date', 'end_date']
+        
+
+class CollectionSerializer(serializers.ModelSerializer):
+    invoice = serializers.PrimaryKeyRelatedField(queryset=Invoice.objects.all())
+    tenancy_id = serializers.CharField(source='invoice.tenancy_id', read_only=True)
+    tenant_name = serializers.CharField(source='invoice.tenancy.tenant_name', read_only=True)
+
+    class Meta:
+        model = Collection
+        fields = [
+            'id', 'invoice', 'amount', 'collection_date', 'collection_mode',
+            'reference_number', 'status', 'account_holder_name',
+            'account_number', 'cheque_number', 'cheque_date',
+            'tenancy_id', 'tenant_name'
+        ]
+
+    def validate(self, data):
+        invoice = data['invoice']
+        if invoice.status != 'unpaid':
+            raise serializers.ValidationError("Can only create collections for unpaid invoices")
+        total_collected = sum(collection.amount for collection in invoice.collections.all()) + data['amount']
+        if total_collected > invoice.total_amount:
+            raise serializers.ValidationError("Collection amount exceeds invoice total")
+        return data
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['collection_date'] = instance.collection_date.strftime('%d %b %Y')
+        representation['amount'] = f"{instance.amount:.2f}"
+        return representation

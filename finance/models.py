@@ -12,7 +12,6 @@ class Collection(models.Model):
         related_name='collections', 
         help_text="The invoice this collection applies to"
     )
-
     amount = models.DecimalField(
         max_digits=12, 
         decimal_places=2, 
@@ -51,6 +50,29 @@ class Collection(models.Model):
         null=True, 
         blank=True, 
         help_text="Reference number for the payment (e.g., transaction ID)"
+    )
+    account_holder_name = models.CharField(
+        max_length=200, 
+        null=True, 
+        blank=True, 
+        help_text="Name of the account holder for bank transfer or cheque"
+    )
+    account_number = models.CharField(
+        max_length=100, 
+        null=True, 
+        blank=True, 
+        help_text="Account number for bank transfer or cheque"
+    )
+    cheque_number = models.CharField(
+        max_length=100, 
+        null=True, 
+        blank=True, 
+        help_text="Cheque number for cheque payments"
+    )
+    cheque_date = models.DateField(
+        null=True, 
+        blank=True, 
+        help_text="Date on the cheque"
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

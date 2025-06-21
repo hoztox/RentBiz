@@ -441,9 +441,6 @@ class Tenancy(models.Model):
             base_code = f"TC{next_base_number:03d}"
             return base_code
 
-
-
-
     def save(self, *args, **kwargs):
         
         if not self.tenancy_code:
@@ -468,7 +465,8 @@ class PaymentSchedule(models.Model):
     status_choices = [
         ('pending', 'Pending'),
         ('paid', 'Paid') ,
-        ('invoice', 'Invoice')
+        ('partially_paid', 'Partially Paid'),
+        ('invoiced', 'Invoiced')
        
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='pending')   
@@ -492,7 +490,8 @@ class AdditionalCharge(models.Model):
     status_choices = [
         ('pending', 'Pending'),
         ('paid', 'Paid') ,
-        ('invoice', 'Invoice') 
+        ('partially_paid', 'Partially Paid'),
+        ('invoiced', 'Invoiced') 
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='pending')   
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -519,6 +518,8 @@ class Invoice(models.Model):
   
     status_choices = [
         ('unpaid', 'Unpaid'),
+        ('partially_paid', 'Partially Paid'),
+        ('overdue', 'Overdue'),       
         ('paid', 'Paid'),
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='unpaid')
