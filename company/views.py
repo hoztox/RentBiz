@@ -637,8 +637,6 @@ class BuildingByCompanyView(APIView):
             
         return paginate_queryset(buildings, request, BuildingSerializer)
         
- 
- 
 
 class UnitCreateView(APIView):
     def post(self, request):
@@ -1689,7 +1687,55 @@ class PendingTenanciesByCompanyAPIView(APIView):
         pending_tenancies = Tenancy.objects.filter(company_id=company_id, status='pending')
         serializer = TenancyListSerializer(pending_tenancies, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
+
+class TenanciesByUnitView(APIView):
+    def get(self, request, company_id, unit_id):
+        try:
+            # Verify company exists
+            company = Company.objects.get(id=company_id)
+            
+            # Verify unit exists and belongs to the company
+            unit = Units.objects.get(id=unit_id, company_id=company_id)
+            
+            # Fetch tenancies for the specified unit and company
+            tenancies = Tenancy.objects.filter(
+                company_id=company_id,
+                unit_id=unit_id,
+                status__in=['active', 'pending', 'renewed']  # Only include relevant statuses
+            ).select_related('tenant', 'building', 'unit')
+            
+            # Apply optional search query
+            search_query = request.query_params.get('search', '').strip()
+            if search_query:
+                tenancies = tenancies.filter(
+                    Q(tenancy_code__icontains=search_query) |
+                    Q(tenant__tenant_name__icontains=search_query)
+                )
+            
+            # Sort tenancies by ID
+            tenancies = tenancies.order_by('id')
+            
+            # Serialize and paginate the response
+            return paginate_queryset(tenancies, request, TenancyDetailSerializer)
+            
+        except Company.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Company not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Units.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Unit not found or does not belong to the company'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error fetching tenancies: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 class ActiveTenanciesByCompanyAPIView(APIView):
     def get(self, request, company_id):
         pending_tenancies = Tenancy.objects.filter(company_id=company_id, status='active')
