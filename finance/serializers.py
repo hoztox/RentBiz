@@ -132,13 +132,16 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
     Fields:
         - id, invoice_number, tenancy, total_amount, status, in_date, end_date
-        - tenancy_name: Derived from tenancy.__str__ (read-only)
+        - tenancy_name: Derived from tenancy.tenant.tenant_name (read-only)
 
     Usage:
         Used in UnpaidInvoicesAPIView and InvoiceDetailsAPIView to return invoice data.
 
+    Optimization:
+        Use select_related('tenancy__tenant') in the view's queryset to avoid N+1 queries.
     """
-    tenancy_name = serializers.CharField(source='tenancy.__str__', read_only=True)
+    tenancy_name = serializers.CharField(source='tenancy.tenant.tenant_name', read_only=True)
+
 
     class Meta:
         model = Invoice

@@ -18,7 +18,6 @@ from .serializers import (
     InvoiceSerializer, CollectionSerializer, ExpenseSerializer,
     ExpenseGetSerializer, RefundSerializer
 )
-from company.serializers import *
 from rentbiz.utils.pagination import paginate_queryset
 
 
@@ -384,6 +383,7 @@ class UnpaidInvoicesAPIView(APIView):
             serializer = InvoiceSerializer(unpaid_invoices, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Exception as e:
+            print(f"Error fetching unpaid invoices: {str(e)}")
             return Response(
                 {'error': f"An error occurred: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
