@@ -1,6 +1,7 @@
 
 from django.urls import path
 from  .views import *
+from rentbiz.utils.dashboard import PropertiesSummaryView
 
 urlpatterns = [
     
@@ -15,7 +16,7 @@ urlpatterns = [
     path('user/<int:user_id>/details/', UserDetailView.as_view(), name='user-detail'),
     
 
-    # Building Properties                                                                           
+    # Building Properties                                                                                
     path('buildings/create/', BuildingCreateView.as_view(), name='building-create'),
     path('buildings/<int:pk>/', BuildingDetailView.as_view(), name='building-detail'),
     path('buildings/company/<int:company_id>/', BuildingByCompanyView.as_view(), name='building-by-company'),
@@ -110,6 +111,12 @@ urlpatterns = [
     # PaymentSchedule
     path('tenancies/<int:tenancy_id>/payment-schedules/', PaymentScheduleAPIView.as_view(), name='payment-schedule-list'),
     path('tenancies/<int:tenancy_id>/payment-schedules/<int:schedule_id>/', PaymentScheduleAPIView.as_view(), name='payment-schedule-update'),
+
+
+
+    #Dashboard
+    path('dashboard/properties-summary/<int:company_id>/', PropertiesSummaryView.as_view(), name='properties-summary')
+
    
 
 ]
