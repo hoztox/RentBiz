@@ -1045,7 +1045,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
                         amount_paid = float(item['amount_paid'])
                         balance = float(item['total'])
                         schedule.status = (
-                            'paid' if balance <= 0 else 'partially_paid' if amount_paid > 0 else 'invoice'
+                            'paid' if balance <= 0 else 'partially_paid' if amount_paid > 0 else 'invoiced'
                         )
                         schedule.save()
                         payment_schedule_ids.append(schedule.id)
@@ -1057,7 +1057,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
                         amount_paid = float(item['amount_paid'])
                         balance = float(item['total'])
                         charge.status = (
-                            'paid' if balance <= 0 else 'partially_paid' if amount_paid > 0 else 'invoice'
+                            'paid' if balance <= 0 else 'partially_paid' if amount_paid > 0 else 'invoiced'
                         )
                         charge.save()
                         additional_charge_ids.append(charge.id)
@@ -1167,7 +1167,7 @@ class AutoInvoiceSerializer(serializers.ModelSerializer):
                 if item['type'] == 'payment_schedule' and item.get('schedule_id'):
                     try:
                         schedule = PaymentSchedule.objects.get(id=item['schedule_id'], tenancy=invoice.tenancy)
-                        schedule.status = 'invoice'
+                        schedule.status = 'invoiced'
                         schedule.save()
                         payment_schedule_ids.append(schedule.id)
                     except PaymentSchedule.DoesNotExist:
@@ -1175,7 +1175,7 @@ class AutoInvoiceSerializer(serializers.ModelSerializer):
                 elif item['type'] == 'additional_charge' and item.get('charge_id'):
                     try:
                         charge = AdditionalCharge.objects.get(id=item['charge_id'], tenancy=invoice.tenancy)
-                        charge.status = 'invoice'
+                        charge.status = 'invoiced'
                         charge.save()
                         additional_charge_ids.append(charge.id)
                     except AdditionalCharge.DoesNotExist:
