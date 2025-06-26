@@ -596,16 +596,22 @@ class CollectionListAPIView(APIView):
 
     Endpoint: GET /api/collections/
     Purpose: Retrieves a paginated list of collections, supporting search by ID, tenancy, tenant name,
-             amount, collection mode, or status, and filters by payment method or status.
+             amount, collection mode, or status, and filters by payment method, status, or upcoming payments.
     Query Parameters:
         - search: Search term for filtering collections.
         - payment_method: Filter by collection mode (e.g., 'cash').
         - status: Filter by collection status.
+        - upcoming_payments: Filter collections for invoices with 'unpaid' or 'partially_paid' status (true/false).
+        - id: Filter by collection ID.
+        - tenancy_id: Filter by tenancy ID.
+        - tenant_name: Filter by tenant name.
+        - start_date: Filter by collection date start.
+        - end_date: Filter by collection date end.
     Response:
         - 200 OK: Paginated list of serialized collection data.
         - 500 Internal Server Error: Unexpected server error.
     Example Request:
-        curl -X GET http://localhost:8000/api/collections/?search=1000&payment_method=cash
+        curl -X GET http://localhost:8000/api/collections/?search=1000&payment_method=cash&upcoming_payments=true
     Example Response:
         {
             "count": 10,
@@ -628,6 +634,12 @@ class CollectionListAPIView(APIView):
             search = request.query_params.get('search', '')
             payment_method = request.query_params.get('payment_method', '')
             status_param = request.query_params.get('status', '')
+            upcoming_payments = request.query_params.get('upcoming_payments', '').lower() == 'true'
+            id_filter = request.query_params.get('id', '')
+            tenancy_id = request.query_params.get('tenancy_id', '')
+            tenant_name = request.query_params.get('tenant_name', '')
+            start_date = request.query_params.get('start_date', '')
+            end_date = request.query_params.get('end_date', '')
 
             collections = Collection.objects.select_related(
                 'invoice', 'invoice__tenancy', 'invoice__tenancy__tenant'
@@ -647,6 +659,22 @@ class CollectionListAPIView(APIView):
                 collections = collections.filter(collection_mode=payment_method)
             if status_param:
                 collections = collections.filter(status=status_param)
+            if upcoming_payments:
+                collections = collections.filter(
+                    invoice__status__in=['unpaid', 'partially_paid']
+                )
+            if id_filter:
+                collections = collections.filter(id=id_filter)
+            if tenancy_id:
+                collections = collections.filter(invoice__tenancy__id=tenancy_id)
+            if tenant_name:
+                collections = collections.filter(
+                    invoice__tenancy__tenant__tenant_name__icontains=tenant_name
+                )
+            if start_date:
+                collections = collections.filter(collection_date__gte=start_date)
+            if end_date:
+                collections = collections.filter(collection_date__lte=end_date)
 
             collections = collections.order_by('-collection_date')
             return paginate_queryset(collections, request, CollectionSerializer)

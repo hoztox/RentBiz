@@ -148,6 +148,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
         fields = ['id', 'invoice_number', 'tenancy', 'tenancy_name', 'total_amount', 'status', 'in_date', 'end_date']
 
 
+
 class CollectionSerializer(serializers.ModelSerializer):
     """
     Serializer for creating and retrieving Collection objects.
@@ -162,6 +163,7 @@ class CollectionSerializer(serializers.ModelSerializer):
           account_holder_name, account_number, cheque_number, cheque_date
         - tenancy_id: Derived from invoice.tenancy_id (read-only)
         - tenant_name: Derived from invoice.tenancy.tenant_name (read-only)
+        - invoice_status: Derived from invoice.status (read-only)
 
     Validation:
         - Ensures the associated invoice has 'unpaid' status.
@@ -177,11 +179,11 @@ class CollectionSerializer(serializers.ModelSerializer):
             "collection_date": "2025-07-01",
             "collection_mode": "cash"
         }
-
     """
     invoice = serializers.PrimaryKeyRelatedField(queryset=Invoice.objects.all())
     tenancy_id = serializers.CharField(source='invoice.tenancy_id', read_only=True)
-    tenant_name = serializers.CharField(source='invoice.tenancy.tenant_name', read_only=True)
+    tenant_name = serializers.CharField(source='invoice.tenancy.tenant.tenant_name', read_only=True)
+    invoice_status = serializers.CharField(source='invoice.status', read_only=True)
 
     class Meta:
         model = Collection
@@ -189,7 +191,7 @@ class CollectionSerializer(serializers.ModelSerializer):
             'id', 'invoice', 'amount', 'collection_date', 'collection_mode',
             'reference_number', 'status', 'account_holder_name',
             'account_number', 'cheque_number', 'cheque_date',
-            'tenancy_id', 'tenant_name'
+            'tenancy_id', 'tenant_name', 'invoice_status'
         ]
 
     def validate(self, data):
@@ -208,7 +210,6 @@ class CollectionSerializer(serializers.ModelSerializer):
             return representation
         except Exception as e:
             raise serializers.ValidationError(f"Error formatting collection data: {str(e)}")
-
 
 class RefundSerializer(serializers.ModelSerializer):
     """
