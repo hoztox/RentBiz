@@ -7,8 +7,6 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('accounts', '0004_country_state'),
-        ('company', '0063_delete_expense'),
         ('finance', '0001_initial'),
     ]
 

@@ -12,7 +12,6 @@ class Collection(models.Model):
         related_name='collections', 
         help_text="The invoice this collection applies to"
     )
-
     amount = models.DecimalField(
         max_digits=12, 
         decimal_places=2, 
@@ -52,6 +51,29 @@ class Collection(models.Model):
         blank=True, 
         help_text="Reference number for the payment (e.g., transaction ID)"
     )
+    account_holder_name = models.CharField(
+        max_length=200, 
+        null=True, 
+        blank=True, 
+        help_text="Name of the account holder for bank transfer or cheque"
+    )
+    account_number = models.CharField(
+        max_length=100, 
+        null=True, 
+        blank=True, 
+        help_text="Account number for bank transfer or cheque"
+    )
+    cheque_number = models.CharField(
+        max_length=100, 
+        null=True, 
+        blank=True, 
+        help_text="Cheque number for cheque payments"
+    )
+    cheque_date = models.DateField(
+        null=True, 
+        blank=True, 
+        help_text="Date on the cheque"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -90,3 +112,32 @@ class Expense(models.Model):
 
     def __str__(self):
         return self.expense_type if self.expense_type else "Untitled Expense"
+
+
+class Refund(models.Model):
+    REFUND_TYPES = [
+        ('deposit', 'Deposit Refund'),
+        ('excess', 'Excess Payment Refund'),
+        ('other', 'Other Refund'),
+    ]
+    
+    REFUND_METHODS = [
+        ('cash', 'Cash'),
+        ('bank_transfer', 'Bank Transfer'),
+        ('cheque', 'Cheque'),
+        ('credit_note', 'Credit Note'),
+    ]
+    
+    tenancy = models.ForeignKey(Tenancy, on_delete=models.CASCADE, related_name='refunds')
+    invoice = models.ForeignKey(Invoice, on_delete=models.SET_NULL, null=True, blank=True)
+    refund_type = models.CharField(max_length=20, choices=REFUND_TYPES)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    refund_method = models.CharField(max_length=20, choices=REFUND_METHODS)
+    reference_number = models.CharField(max_length=100, null=True, blank=True)
+    reason = models.TextField(null=True, blank=True)
+    processed_date = models.DateField(default=timezone.now)
+    processed_by = models.ForeignKey(Users, on_delete=models.SET_NULL, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"Refund #{self.id} - {self.get_refund_type_display()} - {self.amount}"
