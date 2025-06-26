@@ -1,6 +1,9 @@
 
 from django.urls import path
 from  .views import *
+from .reports import (
+    TenancyExportAPIView,
+    )
 
 urlpatterns = [
     
@@ -112,6 +115,9 @@ urlpatterns = [
     # PaymentSchedule
     path('tenancies/<int:tenancy_id>/payment-schedules/', PaymentScheduleAPIView.as_view(), name='payment-schedule-list'),
     path('tenancies/<int:tenancy_id>/payment-schedules/<int:schedule_id>/', PaymentScheduleAPIView.as_view(), name='payment-schedule-update'),
+
+    # Reports
+    path('tenancies/<int:company_id>/export/', TenancyExportAPIView.as_view(), name='tenancy-export'),
    
 
 ]
