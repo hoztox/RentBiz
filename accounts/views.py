@@ -133,6 +133,7 @@ class CompanyDetailView(APIView):
         except Company.DoesNotExist:
             return Response({'error': 'Company not found'}, status=404)
 
+
 class CountryListView(APIView):
     def get(self, request, country_id=None):
 
