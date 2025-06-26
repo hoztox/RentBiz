@@ -1169,6 +1169,138 @@ class ChargecodeDetailAPIView(APIView):
         return Response({"message": "Deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
 
 
+class TerminateTenancyAPIView(APIView):
+    """
+    API View to handle tenancy termination requests.
+
+    ## Description:
+    This view handles the termination process of a tenancy by updating its status 
+    and optionally adding a termination charge.
+
+    ### HTTP Method:
+    - PUT
+
+    ### Endpoint:
+    - /api/tenancy/<tenancy_id>/terminate/
+
+    ### Request Params:
+    - tenancy_id (int): The ID of the tenancy to be terminated.
+
+    ### Request Body (JSON):
+    - apply_charge (bool, optional): Whether to apply a termination charge.
+    - reason (str, optional): Reason for applying the termination charge.
+    - due_date (date, optional): Due date for the charge.
+    - in_date (date, optional): Date when the charge is effective.
+    - amount (decimal, optional): Amount for the charge.
+    - tax_details (list, optional): Tax details for the charge (if applicable).
+
+    ### Response (200 OK):
+    Returns the updated tenancy data and termination charge (if applied).
+    ```json
+    {
+        "tenancy": { ... },
+        "termination_charge": { ... }  // only if apply_charge is True
+    }
+    ```
+
+    ### Error Responses:
+    - 404 NOT FOUND: If the tenancy with the given ID does not exist.
+    - 400 BAD REQUEST: If a termination charge already exists or if validation fails.
+    - 500 INTERNAL SERVER ERROR: For unexpected failures.
+    """
+
+    def put(self, request, tenancy_id):
+        try:
+            # Retrieve the tenancy object by ID
+            tenancy = Tenancy.objects.get(id=tenancy_id)
+            apply_charge = request.data.get('apply_charge', False)
+
+            # Use a transaction to ensure atomicity
+            with transaction.atomic():
+                # Update tenancy as terminated
+                tenancy.is_termination = True
+                tenancy.status = "terminated"
+                tenancy.save()
+
+                response_data = {
+                    'tenancy': TenancyListSerializer(tenancy).data
+                }
+
+                if apply_charge:
+                    # Check if a termination charge already exists
+                    existing_charge = AdditionalCharge.objects.filter(
+                        tenancy=tenancy,
+                        charge_type__name__iexact='termination charge'
+                    ).exists()
+
+                    if existing_charge:
+                        return Response(
+                            {"error": "Termination charge already exists for this tenancy"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+                    # Retrieve or create the charge code for termination
+                    charge_code, _ = ChargeCode.objects.get_or_create(
+                        company=tenancy.company,
+                        title='Termination Charge Code',
+                        defaults={
+                            'user': request.user if request.user.is_authenticated else None
+                        }
+                    )
+
+                    # Retrieve or create charge type for termination
+                    termination_charge_type, _ = Charges.objects.get_or_create(
+                        company=tenancy.company,
+                        name__iexact='termination charge',
+                        defaults={
+                            'name': 'Termination Charge',
+                            'charge_code': charge_code,
+                            'user': request.user if request.user.is_authenticated else None
+                        }
+                    )
+
+                    # Prepare termination charge payload
+                    termination_charge_data = {
+                        'tenancy': tenancy.id,
+                        'charge_type': termination_charge_type.id,
+                        'reason': request.data.get('reason', 'Termination Charge'),
+                        'due_date': request.data.get('due_date'),
+                        'in_date': request.data.get('in_date'),
+                        'amount': request.data.get('amount'),
+                        'status': 'pending'
+                    }
+
+                    # Validate and save the termination charge
+                    serializer = TerminationChargeSerializer(data=termination_charge_data)
+                    if serializer.is_valid():
+                        charge = serializer.save()
+
+                        # Re-serialize with context (e.g., tax details if needed)
+                        serializer = TerminationChargeSerializer(
+                            charge,
+                            context={'tax_details': serializer.validated_data.get('tax_details', [])}
+                        )
+                        response_data['termination_charge'] = serializer.data
+                    else:
+                        # Return serializer validation errors
+                        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+                # Return successful response with updated tenancy and charge (if any)
+                return Response(response_data, status=status.HTTP_200_OK)
+
+        except Tenancy.DoesNotExist:
+            # Return error if tenancy is not found
+            return Response(
+                {"error": "Tenancy not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            # Catch-all for unexpected errors
+            return Response(
+                {"error": f"Internal server error: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
 
 class ChargesListCreateAPIView(APIView):
     def post(self, request):
