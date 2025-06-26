@@ -381,11 +381,6 @@ class ChargesSerializer(serializers.ModelSerializer):
         model = Charges
         fields = '__all__'
         
-        
-    
-
-
-
 
 class AdditionalChargeSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
@@ -1196,3 +1191,115 @@ class AutoInvoiceSerializer(serializers.ModelSerializer):
         else:
             new_sequence = 1
         return f'AUTO{current_year}{new_sequence:04d}'
+
+
+class TerminationChargeSerializer(serializers.Serializer):
+    id = serializers.CharField(read_only=True)
+    tenancy = serializers.IntegerField()
+    charge_type = serializers.IntegerField()
+    charge_type_name = serializers.CharField(read_only=True)
+    reason = serializers.CharField(max_length=255)
+    due_date = serializers.DateField()
+    in_date = serializers.DateField(required=False, allow_null=True)
+    status = serializers.CharField(read_only=True)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+    tax = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    total = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
+    tax_details = serializers.ListField(child=serializers.DictField(), read_only=True)
+
+    def validate(self, data):
+        try:
+            tenancy_id = data.get('tenancy')
+            charge_type_id = data.get('charge_type')
+            amount = data.get('amount')
+            due_date = data.get('due_date')
+            reason = data.get('reason')
+
+            if not tenancy_id:
+                raise serializers.ValidationError("Tenancy is required.")
+            if not charge_type_id:
+                raise serializers.ValidationError("Charge type is required.")
+            if not reason:
+                raise serializers.ValidationError("Reason is required.")
+            if not due_date:
+                raise serializers.ValidationError("Due date is required.")
+            if not amount or amount < 0:
+                raise serializers.ValidationError("Amount is required and must be non-negative.")
+
+            charge_type = Charges.objects.filter(id=charge_type_id).first()
+            if not charge_type:
+                raise serializers.ValidationError(f"Charge type with id {charge_type_id} not found.")
+
+            data['charge_type_name'] = charge_type.name
+
+            # Calculate taxes
+            tax_amount = Decimal('0.00')
+            tax_details = []
+            reference_date = due_date if isinstance(due_date, date) else datetime.strptime(due_date, '%Y-%m-%d').date()
+            taxes = charge_type.taxes.filter(
+                company=charge_type.company,
+                is_active=True,
+                applicable_from__lte=reference_date,
+                applicable_to__gte=reference_date
+            ) | charge_type.taxes.filter(
+                company=charge_type.company,
+                is_active=True,
+                applicable_from__lte=reference_date,
+                applicable_to__isnull=True
+            )
+            for tax in taxes:
+                tax_percentage = Decimal(str(tax.tax_percentage))
+                tax_contribution = (Decimal(str(amount)) * tax_percentage) / Decimal('100')
+                tax_amount += tax_contribution
+                tax_details.append({
+                    'tax_type': tax.tax_type,
+                    'tax_percentage': tax_percentage,
+                    'tax_amount': tax_contribution.quantize(Decimal('0.01'))
+                })
+
+            data['tax'] = tax_amount.quantize(Decimal('0.01'))
+            data['total'] = (Decimal(str(amount)) + tax_amount).quantize(Decimal('0.01'))
+            data['tax_details'] = tax_details
+
+            return data
+
+        except Exception as e:
+            raise serializers.ValidationError(f"Validation error: {str(e)}")
+
+    def create(self, validated_data):
+        tenancy_id = validated_data.pop('tenancy')
+        charge_type_id = validated_data.pop('charge_type')
+        validated_data.pop('charge_type_name', None)
+        validated_data.pop('tax_details', None)
+        tax = validated_data.pop('tax', None)
+        total = validated_data.pop('total', None)
+        
+        tenancy = Tenancy.objects.get(id=tenancy_id)
+        charge_type = Charges.objects.get(id=charge_type_id)
+        
+        additional_charge = AdditionalCharge.objects.create(
+            tenancy=tenancy,
+            charge_type=charge_type,
+            tax=tax,
+            total=total,
+            **validated_data
+        )
+        return additional_charge
+
+    def to_representation(self, instance):
+        if isinstance(instance, AdditionalCharge):
+            return {
+                'id': str(instance.id),
+                'tenancy': instance.tenancy.id,
+                'charge_type': instance.charge_type.id,
+                'charge_type_name': instance.charge_type.name,
+                'reason': instance.reason,
+                'due_date': instance.due_date,
+                'in_date': instance.in_date,
+                'status': instance.status,
+                'amount': instance.amount,
+                'tax': instance.tax,
+                'total': instance.total,
+                'tax_details': self.context.get('tax_details', [])
+            }
+        return super().to_representation(instance)
