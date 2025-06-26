@@ -6,7 +6,8 @@ from .views import (
     ExpensesByCompanyAPIView, ExpenseUpdateView
 )
 from .reports import (
-    CollectionCSVDownloadAPIView
+    CollectionCSVDownloadAPIView,
+    FinancialSummaryView
 )
 
 urlpatterns = [
@@ -80,7 +81,15 @@ urlpatterns = [
     # ------------------------------------------------------------------
     # Reports
     # ------------------------------------------------------------------
-    path('collections/download/',
-     CollectionCSVDownloadAPIView.as_view(),
-      name='collection-csv-download'),
+    path(
+        'collections/download/',
+        CollectionCSVDownloadAPIView.as_view(),
+        name='collection-csv-download'
+    ),
+    path(
+        'income-expenses/<int:company_id>/',
+        FinancialSummaryView.as_view(),
+        name='expense-csv-download'
+    ),
+    
 ]
