@@ -1989,6 +1989,18 @@ class OccupiedUnitsByBuildingView(APIView):
         return Response(serializer.data)
 
 
+class BuildingUnitsByBuildingView(APIView):
+    def get(self, request, building_id):
+        try:
+            building = Building.objects.get(id=building_id)
+        except Building.DoesNotExist:
+            return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        vacant_units = Units.objects.filter(building=building)
+        serializer = UnitSerializer(vacant_units, many=True)
+        return Response(serializer.data)
+
+
 class BuildingsWithOccupiedUnitsView(APIView):
     def get(self, request, company_id):
         buildings = Building.objects.filter(
@@ -3473,3 +3485,8 @@ class AutoInvoiceListAPIView(APIView):
 
  
 
+class TenancyByUnitView(APIView):
+    def get(self, request, unit_id):
+        tenancies = Tenancy.objects.filter(unit_id=unit_id)
+        serializer = TenancyListSerializer(tenancies, many=True)
+        return Response(serializer.data)
