@@ -1804,14 +1804,50 @@ class TenancyDetailView(APIView):
             }, status=status.HTTP_404_NOT_FOUND)
       
 
-class TenancyByCompanyAPIView(APIView):
 
+class TenancyByCompanyAPIView(APIView):
     def get(self, request, company_id):
- 
         tenancies = Tenancy.objects.filter(company_id=company_id)
-        serializer = TenancyListSerializer(tenancies, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
+        # Apply filters
+        search = request.query_params.get('search', None)
+        tenancy_code = request.query_params.get('tenancy_code', None)
+        tenant = request.query_params.get('tenant', None)
+        building = request.query_params.get('building', None)
+        unit = request.query_params.get('unit', None)
+        status = request.query_params.get('status', None)
+        start_date = request.query_params.get('start_date', None)
+        end_date = request.query_params.get('end_date', None)
+
+        if search:
+            tenancies = tenancies.filter(
+                Q(tenancy_code__icontains=search) |
+                Q(tenant__tenant_name__icontains=search) |
+                Q(building__building_name__icontains=search) |
+                Q(unit__unit_name__icontains=search)
+            )
+
+        if tenancy_code:
+            tenancies = tenancies.filter(tenancy_code=tenancy_code)
+        if tenant:
+            tenancies = tenancies.filter(tenant__tenant_name=tenant)
+        if building:
+            tenancies = tenancies.filter(building__building_name=building)
+        if unit:
+            tenancies = tenancies.filter(unit__unit_name=unit)
+        if status:
+            tenancies = tenancies.filter(status=status)
+        if start_date:
+            tenancies = tenancies.filter(start_date__gte=start_date)
+        if end_date:
+            tenancies = tenancies.filter(end_date__lte=end_date)
+
+        # Apply pagination
+        paginator = CustomPagination()
+        paginated_qs = paginator.paginate_queryset(tenancies, request)
+        serializer = TenancyListSerializer(paginated_qs, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
     
     
 class PendingTenanciesByCompanyAPIView(APIView):
@@ -1949,6 +1985,18 @@ class OccupiedUnitsByBuildingView(APIView):
             return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
         
         vacant_units = Units.objects.filter(building=building, unit_status='occupied')
+        serializer = UnitSerializer(vacant_units, many=True)
+        return Response(serializer.data)
+
+
+class BuildingUnitsByBuildingView(APIView):
+    def get(self, request, building_id):
+        try:
+            building = Building.objects.get(id=building_id)
+        except Building.DoesNotExist:
+            return Response({'error': 'Building not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        vacant_units = Units.objects.filter(building=building)
         serializer = UnitSerializer(vacant_units, many=True)
         return Response(serializer.data)
 
@@ -3437,3 +3485,8 @@ class AutoInvoiceListAPIView(APIView):
 
  
 
+class TenancyByUnitView(APIView):
+    def get(self, request, unit_id):
+        tenancies = Tenancy.objects.filter(unit_id=unit_id)
+        serializer = TenancyListSerializer(tenancies, many=True)
+        return Response(serializer.data)
