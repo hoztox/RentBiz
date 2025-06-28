@@ -70,7 +70,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         try:
-            amount = validated_data.get('amount', 0)
+            amount = validated_data.get('amount', Decimal('0'))
             charge_type = validated_data.get('charge_type')
             if charge_type and amount:
                 total_tax_percentage = Decimal('0')
@@ -79,15 +79,48 @@ class ExpenseSerializer(serializers.ModelSerializer):
                     if (tax.applicable_from <= current_date and
                             (tax.applicable_to is None or tax.applicable_to >= current_date)):
                         total_tax_percentage += tax.tax_percentage
+
+                # Fallback to VAT if no tax records found
                 if total_tax_percentage == 0 and charge_type.vat_percentage:
                     total_tax_percentage = Decimal(str(charge_type.vat_percentage))
+
                 tax_amount = (amount * total_tax_percentage) / 100
-                total_amount = amount + tax_amount
+                total_amount = amount * (1 + (total_tax_percentage / 100))
+
                 validated_data['tax'] = tax_amount
                 validated_data['total_amount'] = total_amount
+
             return super().create(validated_data)
+
         except Exception as e:
             raise serializers.ValidationError(f"Error calculating tax or creating expense: {str(e)}")
+    def update(self, instance, validated_data):
+        try:
+            amount = validated_data.get('amount', instance.amount)
+            charge_type = validated_data.get('charge_type', instance.charge_type)
+
+            if charge_type and amount:
+                total_tax_percentage = Decimal('0')
+                current_date = timezone.now().date()
+
+                for tax in charge_type.taxes.filter(is_active=True):
+                    if (tax.applicable_from <= current_date and
+                            (tax.applicable_to is None or tax.applicable_to >= current_date)):
+                        total_tax_percentage += tax.tax_percentage
+
+                if total_tax_percentage == 0 and charge_type.vat_percentage:
+                    total_tax_percentage = Decimal(str(charge_type.vat_percentage))
+
+                tax_amount = (amount * total_tax_percentage) / 100
+                total_amount = amount * (1 + (total_tax_percentage / 100))
+
+                validated_data['tax'] = tax_amount
+                validated_data['total_amount'] = total_amount
+
+            return super().update(instance, validated_data)
+
+        except Exception as e:
+            raise serializers.ValidationError(f"Error calculating tax or updating expense: {str(e)}")
 
 
 class ExpenseGetSerializer(serializers.ModelSerializer):
@@ -148,6 +181,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
         fields = ['id', 'invoice_number', 'tenancy', 'tenancy_name', 'total_amount', 'status', 'in_date', 'end_date']
 
 
+
 class CollectionSerializer(serializers.ModelSerializer):
     """
     Serializer for creating and retrieving Collection objects.
@@ -162,6 +196,7 @@ class CollectionSerializer(serializers.ModelSerializer):
           account_holder_name, account_number, cheque_number, cheque_date
         - tenancy_id: Derived from invoice.tenancy_id (read-only)
         - tenant_name: Derived from invoice.tenancy.tenant_name (read-only)
+        - invoice_status: Derived from invoice.status (read-only)
 
     Validation:
         - Ensures the associated invoice has 'unpaid' status.
@@ -177,11 +212,11 @@ class CollectionSerializer(serializers.ModelSerializer):
             "collection_date": "2025-07-01",
             "collection_mode": "cash"
         }
-
     """
     invoice = serializers.PrimaryKeyRelatedField(queryset=Invoice.objects.all())
     tenancy_id = serializers.CharField(source='invoice.tenancy_id', read_only=True)
-    tenant_name = serializers.CharField(source='invoice.tenancy.tenant_name', read_only=True)
+    tenant_name = serializers.CharField(source='invoice.tenancy.tenant.tenant_name', read_only=True)
+    invoice_status = serializers.CharField(source='invoice.status', read_only=True)
 
     class Meta:
         model = Collection
@@ -189,7 +224,7 @@ class CollectionSerializer(serializers.ModelSerializer):
             'id', 'invoice', 'amount', 'collection_date', 'collection_mode',
             'reference_number', 'status', 'account_holder_name',
             'account_number', 'cheque_number', 'cheque_date',
-            'tenancy_id', 'tenant_name'
+            'tenancy_id', 'tenant_name', 'invoice_status'
         ]
 
     def validate(self, data):
@@ -208,7 +243,6 @@ class CollectionSerializer(serializers.ModelSerializer):
             return representation
         except Exception as e:
             raise serializers.ValidationError(f"Error formatting collection data: {str(e)}")
-
 
 class RefundSerializer(serializers.ModelSerializer):
     """
