@@ -1,7 +1,7 @@
 
 from django.urls import path
 from  .views import *
-from rentbiz.utils.dashboard import PropertiesSummaryView
+from rentbiz.utils.dashboard import *
 
 urlpatterns = [
     
@@ -117,7 +117,11 @@ urlpatterns = [
 
 
     #Dashboard
-    path('dashboard/properties-summary/<int:company_id>/', PropertiesSummaryView.as_view(), name='properties-summary')
+    path('dashboard/properties-summary/<int:company_id>/', PropertiesSummaryView.as_view(), name='properties-summary'),
+    path('dashboard/rent-collection/<int:company_id>/', RentCollectionView.as_view(), name='rent-collection'),
+    path('dashboard/tenency-expiring/<int:company_id>/', TenancyExpiringView.as_view(), name='tenency-expiring'),
+    path('dashboard/revenue-report/<int:company_id>/', FinancialReportView.as_view(), name='revenue-report'),
+   
 
    
 
