@@ -466,6 +466,45 @@ class AdditionalChargeSerializer(serializers.Serializer):
                 'total': instance.get('total'),
                 'tax_details': instance.get('tax_details')
             }
+        
+        # Handle AdditionalCharge model instance
+        if hasattr(instance, 'charge_type'):
+            # Calculate tax details for model instances
+            tax_details = []
+            if instance.charge_type and instance.due_date and instance.amount:
+                taxes = instance.charge_type.taxes.filter(
+                    company=instance.charge_type.company,
+                    is_active=True,
+                    applicable_from__lte=instance.due_date,
+                    applicable_to__gte=instance.due_date
+                ) | instance.charge_type.taxes.filter(
+                    company=instance.charge_type.company,
+                    is_active=True,
+                    applicable_from__lte=instance.due_date,
+                    applicable_to__isnull=True
+                )
+                for tax in taxes:
+                    tax_percentage = Decimal(str(tax.tax_percentage))
+                    tax_contribution = (Decimal(str(instance.amount)) * tax_percentage) / Decimal('100')
+                    tax_details.append({
+                        'tax_type': tax.tax_type,
+                        'tax_percentage': tax_percentage,
+                        'tax_amount': tax_contribution.quantize(Decimal('0.01'))
+                    })
+            
+            return {
+                'id': instance.id,
+                'charge_type': instance.charge_type.id if instance.charge_type else None,
+                'charge_type_name': instance.charge_type.name if instance.charge_type else None,
+                'reason': instance.reason,
+                'due_date': instance.due_date,
+                'status': instance.status,
+                'amount': instance.amount,
+                'tax': instance.tax,
+                'total': instance.total,
+                'tax_details': tax_details
+            }
+        
         return super().to_representation(instance)
 
 
