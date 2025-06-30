@@ -1,7 +1,13 @@
 
 from django.urls import path
 from  .views import *
+<<<<<<<<< Temporary merge branch 1
+from .reports import (
+    TenancyExportAPIView,
+    )
+=========
 from rentbiz.utils.dashboard import *
+>>>>>>>>> Temporary merge branch 2
 
 urlpatterns = [
     
@@ -114,6 +120,10 @@ urlpatterns = [
     path('tenancies/<int:tenancy_id>/payment-schedules/', PaymentScheduleAPIView.as_view(), name='payment-schedule-list'),
     path('tenancies/<int:tenancy_id>/payment-schedules/<int:schedule_id>/', PaymentScheduleAPIView.as_view(), name='payment-schedule-update'),
 
+<<<<<<<<< Temporary merge branch 1
+    # Reports
+    path('tenancies/<int:company_id>/export/', TenancyExportAPIView.as_view(), name='tenancy-export'),
+=========
 
 
     #Dashboard
@@ -121,7 +131,9 @@ urlpatterns = [
     path('dashboard/rent-collection/<int:company_id>/', RentCollectionView.as_view(), name='rent-collection'),
     path('dashboard/tenency-expiring/<int:company_id>/', TenancyExpiringView.as_view(), name='tenency-expiring'),
     path('dashboard/revenue-report/<int:company_id>/', FinancialReportView.as_view(), name='revenue-report'),
-   
+
+    # Reports
+    path('tenancies/<int:company_id>/export/', TenancyExportAPIView.as_view(), name='tenancy-export'),
 
    
 
