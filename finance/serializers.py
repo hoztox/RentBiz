@@ -211,6 +211,7 @@ class CollectionSerializer(serializers.ModelSerializer):
         except Exception as e:
             raise serializers.ValidationError(f"Error formatting collection data: {str(e)}")
 
+
 class RefundSerializer(serializers.ModelSerializer):
     """
     Serializer for Refund objects.
