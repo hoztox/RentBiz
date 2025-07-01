@@ -114,6 +114,8 @@ class StateListView(APIView):
                 {"error": "Country not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
+
+            
 class CompanyDetailView(APIView):
     def get(self, request, company_id):
         try:

@@ -1761,6 +1761,7 @@ class TenancyCreateView(APIView):
         }, status=status.HTTP_400_BAD_REQUEST)
 
 
+
 class TenancyDetailView(APIView):
     """Get tenancy details with payment schedules"""
     
@@ -1779,14 +1780,24 @@ class TenancyDetailView(APIView):
                 'success': False,
                 'message': 'Tenancy not found'
             }, status=status.HTTP_404_NOT_FOUND)
-            
 
     def put(self, request, pk, format=None):
         tenancy = get_object_or_404(Tenancy, pk=pk)
-        serializer = TenancyCreateSerializer(tenancy, data=request.data, partial=False)  
+        # Print incoming request data to inspect its contents
+        print("Request data:", request.data)
+        
+        serializer = TenancyCreateSerializer(tenancy, data=request.data, partial=False)
+        # Print serializer initial data before validation
+        print("Serializer initial data:", serializer.initial_data)
+        
         if serializer.is_valid():
+            # Print validated data after serializer processing
+            print("Validated data:", serializer.validated_data)
             serializer.save()
             return Response(serializer.data)
+        
+        # Print serializer errors if validation fails
+        print("Serializer errors:", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     def delete(self, request, pk):
@@ -3277,6 +3288,7 @@ class InvoiceConfigView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+
 class AutoGenerateInvoiceAPIView(APIView):
     def post(self, request):
         """Trigger automatic invoice generation for all configured tenancies"""
@@ -3318,13 +3330,17 @@ class AutoGenerateInvoiceAPIView(APIView):
                         serializer = AutoInvoiceSerializer(data=invoice_data)
                         if serializer.is_valid():
                             invoice = serializer.save(is_automated=True)
-                            self.send_invoice_email(invoice)
+                            
+                            # Send email and log result
+                            email_sent = self.send_invoice_email(invoice)
                             
                             results.append({
                                 'tenancy_id': tenancy.id,
                                 'invoice_id': invoice.id,
                                 'invoice_number': invoice.invoice_number,
-                                'status': 'created'
+                                'status': 'created',
+                                'email_sent': email_sent,
+                                'tenant_email': invoice.tenancy.tenant.email if invoice.tenancy.tenant else None
                             })
                         else:
                             logger.error(f"Serializer errors for tenancy {tenancy.id}: {serializer.errors}")
@@ -3350,7 +3366,7 @@ class AutoGenerateInvoiceAPIView(APIView):
         return results
 
     def prepare_invoice_data(self, tenancy, due_date_threshold, combine_charges):
-        """Prepare invoice data based on configuration"""
+        """Prepare invoice data based on configuration - FIXED VERSION"""
         items = []
         total_amount = 0
         
@@ -3372,7 +3388,8 @@ class AutoGenerateInvoiceAPIView(APIView):
                 'amount': schedule.amount,
                 'vat': schedule.vat or 0,
                 'tax': schedule.tax or 0,
-                'total': schedule.total or schedule.amount
+                'total': schedule.total or schedule.amount,
+                'amount_paid': 0  # FIX: Add required field
             })
             total_amount += schedule.total or schedule.amount
 
@@ -3395,13 +3412,14 @@ class AutoGenerateInvoiceAPIView(APIView):
                     'amount': charge.amount,
                     'vat': charge.vat or 0,
                     'tax': charge.tax or 0,
-                    'total': charge.total or charge.amount
+                    'total': charge.total or charge.amount,
+                    'amount_paid': 0  # FIX: Add required field
                 })
                 total_amount += charge.total or charge.amount
 
         invoice_data = {
             'tenancy': tenancy.id,
-            'in_date': datetime.now().date(),  # Current date as invoice date
+            'invoice_date': datetime.now().date(),  # FIX: Use invoice_date instead of in_date
             'end_date': due_date_threshold,
             'building_name': tenancy.unit.building.building_name if tenancy.unit else '',
             'unit_name': tenancy.unit.unit_name if tenancy.unit else '',
@@ -3415,13 +3433,26 @@ class AutoGenerateInvoiceAPIView(APIView):
         return invoice_data
 
     def send_invoice_email(self, invoice):
-        """Send invoice email with PDF attachment"""
+        """Send invoice email with PDF attachment - IMPROVED VERSION"""
         try:
+            # Check if tenant has email
+            if not invoice.tenancy.tenant or not invoice.tenancy.tenant.email:
+                logger.warning(f"No email found for tenant in invoice {invoice.id}")
+                return False
+            
+            # Render email content
             html_content = render_to_string('company/invoice_body.html', {'invoice': invoice})
             pdf_content = render_to_string('company/invoice_pdf.html', {'invoice': invoice})
-            pdf_file = BytesIO()
-            pisa.CreatePDF(pdf_content, dest=pdf_file)
             
+            # Generate PDF
+            pdf_file = BytesIO()
+            pisa_status = pisa.CreatePDF(pdf_content, dest=pdf_file)
+            
+            if pisa_status.err:
+                logger.error(f"Error generating PDF for invoice {invoice.id}: {pisa_status.err}")
+                return False
+            
+            # Prepare email
             subject = f"Invoice #{invoice.invoice_number} from {invoice.company.company_name}"
             from_email = settings.DEFAULT_FROM_EMAIL
             to_email = invoice.tenancy.tenant.email
@@ -3439,10 +3470,14 @@ class AutoGenerateInvoiceAPIView(APIView):
                 mimetype='application/pdf'
             )
             
+            # Send email
             email.send()
-            logger.info(f"Invoice email sent successfully for invoice {invoice.id}")
+            logger.info(f"Invoice email sent successfully for invoice {invoice.id} to {to_email}")
+            return True
+            
         except Exception as e:
             logger.error(f"Failed to send invoice email for invoice {invoice.id}: {str(e)}", exc_info=True)
+            return False
 
 
 class AutoInvoiceListAPIView(APIView):
