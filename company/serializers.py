@@ -1148,7 +1148,7 @@ class AutoInvoiceSerializer(serializers.ModelSerializer):
     tenancy = serializers.PrimaryKeyRelatedField(queryset=Tenancy.objects.all())
     company = serializers.PrimaryKeyRelatedField(queryset=Company.objects.all(), allow_null=True)
     user = serializers.PrimaryKeyRelatedField(queryset=Users.objects.all(), allow_null=True)
-    invoice_date = serializers.DateField(source='in_date')  # Removed allow_null=True to enforce requirement
+    invoice_date = serializers.DateField()  # FIX: Ensure this matches the field name
     end_date = serializers.DateField(allow_null=True)
     building_name = serializers.CharField(max_length=255, required=False)
     unit_name = serializers.CharField(max_length=255, required=False)
@@ -1156,6 +1156,7 @@ class AutoInvoiceSerializer(serializers.ModelSerializer):
     total_amount = serializers.DecimalField(max_digits=15, decimal_places=2)
     payment_schedules = PaymentScheduleSerializer(many=True, read_only=True)
     additional_charges = AdditionalChargeSerializer(many=True, read_only=True)
+    
     class Meta:
         model = Invoice
         fields = [
@@ -1163,31 +1164,35 @@ class AutoInvoiceSerializer(serializers.ModelSerializer):
             'items', 'total_amount', 'company', 'user', 'invoice_number', 'status',
             'is_automated', 'payment_schedules', 'additional_charges'
         ]
+    
     def validate(self, data):
         tenancy = data.get('tenancy')
         if not tenancy:
             raise serializers.ValidationError({"tenancy": "Tenancy is required."})
+        
         items = data.get('items', [])
         if not items:
             raise serializers.ValidationError({"items": "At least one item is required."})
+        
         calculated_total = sum(item['total'] for item in items)
         if calculated_total != data.get('total_amount'):
             raise serializers.ValidationError({
                 "total_amount": f"Total amount ({calculated_total}) does not match provided total ({data.get('total_amount')})."
             })
-        # Ensure invoice_date (in_date) is present
-        if not data.get('in_date'):
-            raise serializers.ValidationError({"invoice_date": "This field is required."})
+        
         return data
+    
     def create(self, validated_data):
         with transaction.atomic():
             items_data = validated_data.pop('items')
             company = validated_data.pop('company', None)
             user = validated_data.pop('user', None)
             is_automated = validated_data.pop('is_automated', True)
+            
+            # FIX: Map invoice_date to in_date for model creation
             invoice = Invoice.objects.create(
                 tenancy=validated_data['tenancy'],
-                in_date=validated_data['in_date'],
+                in_date=validated_data['invoice_date'],  # Map invoice_date to in_date
                 end_date=validated_data.get('end_date'),
                 total_amount=validated_data['total_amount'],
                 invoice_number=self.generate_invoice_number(),
@@ -1195,8 +1200,10 @@ class AutoInvoiceSerializer(serializers.ModelSerializer):
                 user=user,
                 is_automated=is_automated
             )
+            
             payment_schedule_ids = []
             additional_charge_ids = []
+            
             for item in items_data:
                 if item['type'] == 'payment_schedule' and item.get('schedule_id'):
                     try:
@@ -1206,6 +1213,7 @@ class AutoInvoiceSerializer(serializers.ModelSerializer):
                         payment_schedule_ids.append(schedule.id)
                     except PaymentSchedule.DoesNotExist:
                         raise serializers.ValidationError(f"PaymentSchedule ID {item['schedule_id']} not found.")
+                
                 elif item['type'] == 'additional_charge' and item.get('charge_id'):
                     try:
                         charge = AdditionalCharge.objects.get(id=item['charge_id'], tenancy=invoice.tenancy)
@@ -1214,21 +1222,26 @@ class AutoInvoiceSerializer(serializers.ModelSerializer):
                         additional_charge_ids.append(charge.id)
                     except AdditionalCharge.DoesNotExist:
                         raise serializers.ValidationError(f"AdditionalCharge ID {item['charge_id']} not found.")
+            
             if payment_schedule_ids:
                 invoice.payment_schedules.set(payment_schedule_ids)
             if additional_charge_ids:
                 invoice.additional_charges.set(additional_charge_ids)
+            
             return invoice
+    
     def generate_invoice_number(self):
         current_year = datetime.now().strftime('%y')
         last_invoice = Invoice.objects.filter(
             invoice_number__startswith=f'AUTO{current_year}'
         ).order_by('-invoice_number').first()
+        
         if last_invoice:
             last_sequence = int(last_invoice.invoice_number[-4:])
             new_sequence = last_sequence + 1
         else:
             new_sequence = 1
+        
         return f'AUTO{current_year}{new_sequence:04d}'
 
 
