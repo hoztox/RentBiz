@@ -998,8 +998,8 @@ class InvoiceItemSerializer(serializers.Serializer):
     due_date = serializers.DateField(allow_null=True)
     amount = serializers.DecimalField(max_digits=12, decimal_places=2)
     tax = serializers.DecimalField(max_digits=12, decimal_places=2)
-    total = serializers.DecimalField(max_digits=15, decimal_places=2)  # Represents balance
-    amount_paid = serializers.DecimalField(max_digits=12, decimal_places=2)
+    total = serializers.DecimalField(max_digits=15, decimal_places=2 )  # Represents balance
+    amount_paid = serializers.DecimalField(max_digits=12, decimal_places=2 , allow_null=True , required=False)
     type = serializers.ChoiceField(choices=['payment_schedule', 'additional_charge'])
     schedule_id = serializers.IntegerField(required=False, allow_null=True)
     charge_id = serializers.IntegerField(required=False, allow_null=True)
