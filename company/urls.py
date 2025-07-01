@@ -1,9 +1,13 @@
 
 from django.urls import path
 from  .views import *
+
+from rentbiz.utils.dashboard import *
+
 from .reports import (
     TenancyExportAPIView,
     )
+
 
 urlpatterns = [
     
@@ -18,7 +22,7 @@ urlpatterns = [
     path('user/<int:user_id>/details/', UserDetailView.as_view(), name='user-detail'),
     
 
-    # Building Properties                                                                           
+    # Building Properties                                                                                
     path('buildings/create/', BuildingCreateView.as_view(), name='building-create'),
     path('buildings/<int:pk>/', BuildingDetailView.as_view(), name='building-detail'),
     path('buildings/company/<int:company_id>/', BuildingByCompanyView.as_view(), name='building-by-company'),
@@ -33,6 +37,7 @@ urlpatterns = [
     path('units/company/<int:company_id>/', UnitsByCompanyView.as_view(), name='units-by-company'),
     path('units/<int:building_id>/vacant-units/', VacantUnitsByBuildingView.as_view(), name='vacant-units-by-building'),
     path('units/<int:building_id>/occupied-units/', OccupiedUnitsByBuildingView.as_view(), name='vacant-units-by-building'),
+    path('units/building/<int:building_id>/', BuildingUnitsByBuildingView.as_view(), name='vacant-units-by-building'),
    
     
     # unit type in masters
@@ -87,6 +92,7 @@ urlpatterns = [
     path('tenancy/<int:tenancy_id>/download-pdf/', TenancyHTMLPDFView.as_view(), name='tenancy-download-pdf'),
     path('tenancies/company/<company_id>/<unit_id>/',TenanciesByUnitView.as_view(), name='tenancies-by-unit'),
     path('tenancies/<int:tenancy_id>/terminate/', TerminateTenancyAPIView.as_view(), name='terminate-tenancy'),
+    path('tenancies/unit/<int:unit_id>/', TenancyByUnitView.as_view(), name='tenancies-by-uni'),
     
     
     #Taxes
@@ -116,8 +122,18 @@ urlpatterns = [
     path('tenancies/<int:tenancy_id>/payment-schedules/', PaymentScheduleAPIView.as_view(), name='payment-schedule-list'),
     path('tenancies/<int:tenancy_id>/payment-schedules/<int:schedule_id>/', PaymentScheduleAPIView.as_view(), name='payment-schedule-update'),
 
+
+
+
+    #Dashboard
+    path('dashboard/properties-summary/<int:company_id>/', PropertiesSummaryView.as_view(), name='properties-summary'),
+    path('dashboard/rent-collection/<int:company_id>/', RentCollectionView.as_view(), name='rent-collection'),
+    path('dashboard/tenency-expiring/<int:company_id>/', TenancyExpiringView.as_view(), name='tenency-expiring'),
+    path('dashboard/revenue-report/<int:company_id>/', FinancialReportView.as_view(), name='revenue-report'),
+
     # Reports
     path('tenancies/<int:company_id>/export/', TenancyExportAPIView.as_view(), name='tenancy-export'),
+
    
 
 ]

@@ -70,7 +70,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         try:
-            amount = validated_data.get('amount', 0)
+            amount = validated_data.get('amount', Decimal('0'))
             charge_type = validated_data.get('charge_type')
             if charge_type and amount:
                 total_tax_percentage = Decimal('0')
@@ -79,15 +79,48 @@ class ExpenseSerializer(serializers.ModelSerializer):
                     if (tax.applicable_from <= current_date and
                             (tax.applicable_to is None or tax.applicable_to >= current_date)):
                         total_tax_percentage += tax.tax_percentage
+
+                # Fallback to VAT if no tax records found
                 if total_tax_percentage == 0 and charge_type.vat_percentage:
                     total_tax_percentage = Decimal(str(charge_type.vat_percentage))
+
                 tax_amount = (amount * total_tax_percentage) / 100
-                total_amount = amount + tax_amount
+                total_amount = amount * (1 + (total_tax_percentage / 100))
+
                 validated_data['tax'] = tax_amount
                 validated_data['total_amount'] = total_amount
+
             return super().create(validated_data)
+
         except Exception as e:
             raise serializers.ValidationError(f"Error calculating tax or creating expense: {str(e)}")
+    def update(self, instance, validated_data):
+        try:
+            amount = validated_data.get('amount', instance.amount)
+            charge_type = validated_data.get('charge_type', instance.charge_type)
+
+            if charge_type and amount:
+                total_tax_percentage = Decimal('0')
+                current_date = timezone.now().date()
+
+                for tax in charge_type.taxes.filter(is_active=True):
+                    if (tax.applicable_from <= current_date and
+                            (tax.applicable_to is None or tax.applicable_to >= current_date)):
+                        total_tax_percentage += tax.tax_percentage
+
+                if total_tax_percentage == 0 and charge_type.vat_percentage:
+                    total_tax_percentage = Decimal(str(charge_type.vat_percentage))
+
+                tax_amount = (amount * total_tax_percentage) / 100
+                total_amount = amount * (1 + (total_tax_percentage / 100))
+
+                validated_data['tax'] = tax_amount
+                validated_data['total_amount'] = total_amount
+
+            return super().update(instance, validated_data)
+
+        except Exception as e:
+            raise serializers.ValidationError(f"Error calculating tax or updating expense: {str(e)}")
 
 
 class ExpenseGetSerializer(serializers.ModelSerializer):
