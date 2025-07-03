@@ -229,10 +229,12 @@ class CollectionSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         invoice = data.get('invoice')
-        if invoice and invoice.status != 'unpaid':
+        # Only enforce 'unpaid' status for creation (when self.instance is None)
+        if invoice and not self.instance and invoice.status != 'unpaid':
             raise serializers.ValidationError(
                 f"Cannot create collection for invoice {invoice.id} with status '{invoice.status}'"
             )
+        print(f"Serializer validation passed for invoice {invoice.id}, instance exists: {bool(self.instance)}")
         return data
 
     def to_representation(self, instance):
@@ -243,6 +245,7 @@ class CollectionSerializer(serializers.ModelSerializer):
             return representation
         except Exception as e:
             raise serializers.ValidationError(f"Error formatting collection data: {str(e)}")
+
 
 class RefundSerializer(serializers.ModelSerializer):
     """

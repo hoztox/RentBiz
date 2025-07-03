@@ -78,7 +78,6 @@ class Collection(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
 
-
 class Expense(models.Model):
     
     user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='expense_user', null=True, blank=True) 
@@ -141,3 +140,48 @@ class Refund(models.Model):
     
     def __str__(self):
         return f"Refund #{self.id} - {self.get_refund_type_display()} - {self.amount}"
+
+
+class PaymentDistribution(models.Model):
+    """
+    Tracks how collection amounts are distributed across payment schedules and additional charges
+    """
+    collection = models.ForeignKey(Collection ,on_delete=models.CASCADE, related_name='distributions')
+    payment_schedule = models.ForeignKey(PaymentSchedule, on_delete=models.CASCADE, null=True, blank=True)
+    additional_charge = models.ForeignKey(AdditionalCharge, on_delete=models.CASCADE, null=True, blank=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(payment_schedule__isnull=False) | models.Q(additional_charge__isnull=False),
+                name='either_payment_schedule_or_additional_charge'
+            )
+        ]
+    
+    def __str__(self):
+        if self.payment_schedule:
+            return f"Distribution: {self.amount} to PaymentSchedule {self.payment_schedule.id}"
+        return f"Distribution: {self.amount} to AdditionalCharge {self.additional_charge.id}"
+
+
+class Overpayment(models.Model):
+    """
+    Stores overpayment amounts that exceed the invoice total
+    """
+    tenancy = models.ForeignKey(Tenancy, on_delete=models.CASCADE, related_name='overpayments')
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='overpayments')
+    collection = models.ForeignKey(Collection, on_delete=models.CASCADE, related_name='overpayment')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    status_choices = [
+        ('available', 'Available'),
+        ('refunded', 'Refunded'),
+        ('adjusted', 'Adjusted'),
+    ]
+    status = models.CharField(max_length=20, choices=status_choices, default='available')
+    notes = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"Overpayment: {self.amount} for Invoice {self.invoice.invoice_number}"
