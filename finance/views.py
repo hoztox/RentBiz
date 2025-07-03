@@ -13,12 +13,13 @@ from company.models import (
     Invoice, PaymentSchedule, AdditionalCharge, Charges,
     Tenancy, ChargeCode, Users
 )
-from .models import Expense, Refund
+from .models import Expense, Refund,Overpayment,PaymentDistribution
 from .serializers import (
     InvoiceSerializer, CollectionSerializer, ExpenseSerializer,
     ExpenseGetSerializer, RefundSerializer
 )
 from rentbiz.utils.pagination import paginate_queryset
+from django.db import transaction
 
 
 class CalculateTotalView(APIView):
@@ -383,7 +384,6 @@ class UnpaidInvoicesAPIView(APIView):
             serializer = InvoiceSerializer(unpaid_invoices, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Exception as e:
-            print(f"Error fetching unpaid invoices: {str(e)}")
             return Response(
                 {'error': f"An error occurred: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -521,8 +521,8 @@ class CollectionCreateAPIView(APIView):
     API to create a new collection for an invoice.
 
     Endpoint: POST /api/collections/
-    Purpose: Records a payment collection for an invoice and updates the invoice's status
-             based on the total collected amount.
+    Purpose: Records a payment collection for an invoice, distributes it across payment schedules
+             and additional charges, handles overpayments, and updates invoice status.
     Request Body:
         {
             "invoice": <invoice_id> (int, required),
@@ -536,14 +536,14 @@ class CollectionCreateAPIView(APIView):
         - 400 Bad Request: Invalid input data.
         - 500 Internal Server Error: Unexpected server error.
     Example Request:
-        curl -X POST http://localhost:8000/api/collections/ \
-        -H "Content-Type: application/json" \
-        -d '{"invoice": 1, "amount": 1000.00, "collection_mode": "cash", "collection_date": "2025-07-01"}'
+        curl -X POST http://localhost:8000/api/collections/
+        -H "Content-Type: application/json" 
+        -d '{"invoice": 1, "amount": 200.00, "collection_mode": "cash", "collection_date": "2025-07-01"}'
     Example Response:
         {
             "id": 1,
             "invoice": 1,
-            "amount": "1000.00",
+            "amount": "200.00",
             "collection_mode": "cash",
             ...
         }
@@ -551,41 +551,473 @@ class CollectionCreateAPIView(APIView):
 
     def post(self, request, *args, **kwargs):
         try:
-            serializer = CollectionSerializer(data=request.data)
-            if not serializer.is_valid():
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            with transaction.atomic():
+                serializer = CollectionSerializer(data=request.data)
+                if not serializer.is_valid():
+                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-            collection = serializer.save()
-            invoice = collection.invoice
-            total_collected = (
-                Collection.objects.filter(invoice=invoice).aggregate(Sum('amount'))['amount__sum'] or 0
-            )
+                collection = serializer.save()
+                invoice = collection.invoice
+                collection_amount = collection.amount
 
-            if total_collected >= invoice.total_amount:
-                invoice.status = 'paid'
-                for item in (invoice.payment_schedules.all(), invoice.additional_charges.all()):
-                    for obj in item:
-                        obj.status = 'paid'
-                        obj.save()
-            elif total_collected > 0:
-                invoice.status = 'partially_paid'
-                for item in (invoice.payment_schedules.all(), invoice.additional_charges.all()):
-                    for obj in item:
-                        obj.status = 'partially_paid'
-                        obj.save()
-            else:
-                invoice.status = 'unpaid'
-                for item in (invoice.payment_schedules.all(), invoice.additional_charges.all()):
-                    for obj in item:
-                        obj.status = 'pending'
-                        obj.save()
+                payment_schedules = invoice.payment_schedules.all()
+                additional_charges = invoice.additional_charges.all()
+                components = list(payment_schedules) + list(additional_charges)
+                total_components = len(components)
 
-            invoice.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+                if total_components == 0:
+                    return Response(
+                        {"error": "Invoice has no payment schedules or additional charges."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                total_outstanding = Decimal('0.00')
+                for component in components:
+                    amount_paid = (
+                        PaymentDistribution.objects.filter(
+                            collection__invoice=invoice,
+                            collection__status='completed',
+                            payment_schedule=component if isinstance(component, PaymentSchedule) else None,
+                            additional_charge=component if isinstance(component, AdditionalCharge) else None
+                        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+                    )
+                    remaining_balance = (component.total or Decimal('0.00')) - amount_paid
+                    total_outstanding += remaining_balance
+
+                overpayment_amount = Decimal('0.00')
+                if collection_amount > total_outstanding:
+                    overpayment_amount = collection_amount - total_outstanding
+                    collection_amount = total_outstanding
+
+                if collection_amount > 0:
+                    amount_per_component = collection_amount / total_components
+
+                    for component in components:
+                        amount_paid = (
+                            PaymentDistribution.objects.filter(
+                                collection__invoice=invoice,
+                                collection__status='completed',
+                                payment_schedule=component if isinstance(component, PaymentSchedule) else None,
+                                additional_charge=component if isinstance(component, AdditionalCharge) else None
+                            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+                        )
+                        remaining_balance = (component.total or Decimal('0.00')) - amount_paid
+                        distributed_amount = min(amount_per_component, remaining_balance)
+
+                        if distributed_amount > 0:
+                            PaymentDistribution.objects.create(
+                                collection=collection,
+                                payment_schedule=component if isinstance(component, PaymentSchedule) else None,
+                                additional_charge=component if isinstance(component, AdditionalCharge) else None,
+                                amount=distributed_amount
+                            )
+
+                        total_paid_for_component = amount_paid + (distributed_amount if distributed_amount > 0 else Decimal('0.00'))
+                        if total_paid_for_component >= (component.total or Decimal('0.00')):
+                            component.status = 'paid'
+                        elif total_paid_for_component > 0:
+                            component.status = 'partially_paid'
+                        else:
+                            component.status = 'pending'
+                        component.save()
+
+                if overpayment_amount > 0:
+                    Overpayment.objects.create(
+                        tenancy=invoice.tenancy,
+                        invoice=invoice,
+                        collection=collection,
+                        amount=overpayment_amount,
+                        status='available'
+                    )
+
+                total_collected = (
+                    Collection.objects.filter(invoice=invoice, status='completed')
+                    .aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
+                )
+                if total_collected >= invoice.total_amount:
+                    invoice.status = 'paid'
+                elif total_collected > 0:
+                    invoice.status = 'partially_paid'
+                else:
+                    invoice.status = 'unpaid'
+                invoice.save()
+
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
 
         except Exception as e:
             return Response(
-                {"error": "An error occurred while processing the collection."},
+                {"error": f"An error occurred while processing the collection: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class CollectionUpdateAPIView(APIView):
+    """
+    API to update an existing collection for an invoice.
+
+    Endpoint: PUT /api/collections/<int:pk>/
+    Purpose: Updates a payment collection, redistributes it across payment schedules
+             and additional charges, handles overpayments, and updates invoice status.
+    Request Body:
+        {
+            "invoice": <invoice_id> (int, required),
+            "amount": <amount> (decimal, required),
+            "collection_mode": <payment_method> (string, required),
+            "collection_date": <date> (string, YYYY-MM-DD, required),
+            "reference_number": <string> (optional),
+            "account_holder_name": <string> (optional),
+            "account_number": <string> (optional),
+            "cheque_number": <string> (optional),
+            "cheque_date": <date> (string, YYYY-MM-DD, optional)
+        }
+    Response:
+        - 200 OK: Serialized updated collection data.
+        - 400 Bad Request: Invalid input data or invoice not found.
+        - 404 Not Found: Collection not found.
+        - 500 Internal Server Error: Unexpected server error.
+    Example Request:
+        curl -X PUT http://localhost:8000/api/collections/1/
+        -H "Content-Type: application/json" 
+        -d '{"invoice": 1, "amount": 250.00, "collection_mode": "bank_transfer", "collection_date": "2025-07-02", "reference_number": "TX123", "account_holder_name": "John Doe", "account_number": "1234567890"}'
+    Example Response:
+        {
+            "id": 1,
+            "invoice": 1,
+            "amount": "250.00",
+            "collection_mode": "bank_transfer",
+            "collection_date": "02 Jul 2025",
+            ...
+        }
+    """
+
+    def put(self, request, pk, *args, **kwargs):
+
+        try:
+            with transaction.atomic():
+                # Retrieve the collection
+                try:
+                    collection = Collection.objects.get(pk=pk)
+                except Collection.DoesNotExist:
+                    return Response(
+                        {"error": "Collection not found."},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+
+                # Serialize and validate the updated data
+                serializer = CollectionSerializer(collection, data=request.data, partial=True)
+                if not serializer.is_valid():
+                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+                # Save the updated collection
+                collection = serializer.save()
+
+                # Delete existing payment distributions to redistribute
+                PaymentDistribution.objects.filter(collection=collection).delete()
+                Overpayment.objects.filter(collection=collection).delete()
+
+                invoice = collection.invoice
+                collection_amount = collection.amount
+
+                # Get all payment schedules and additional charges for the invoice
+                payment_schedules = invoice.payment_schedules.all()
+                additional_charges = invoice.additional_charges.all()
+                components = list(payment_schedules) + list(additional_charges)
+                total_components = len(components)
+
+                if total_components == 0:
+                    return Response(
+                        {"error": "Invoice has no payment schedules or additional charges."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                # Calculate total outstanding amount for the invoice
+                total_outstanding = sum(
+                    (component.total - (
+                        component.invoices.filter(collections__status='completed')
+                        .exclude(collections__id=collection.id)
+                        .aggregate(total=Sum('collections__amount'))['total'] or Decimal('0.00')
+                    )) for component in components
+                )
+
+                overpayment_amount = Decimal('0.00')
+                if collection_amount > total_outstanding:
+                    overpayment_amount = collection_amount - total_outstanding
+                    collection_amount = total_outstanding
+
+                # Distribute the collection amount equally across components
+                if collection_amount > 0:
+                    amount_per_component = collection_amount / total_components
+
+                    for component in components:
+                        # Calculate remaining balance for this component
+                        amount_paid = (
+                            component.invoices.filter(collections__status='completed')
+                            .exclude(collections__id=collection.id)
+                            .aggregate(total=Sum('collections__amount'))['total'] or Decimal('0.00')
+                        )
+                        remaining_balance = component.total - amount_paid
+
+                        # Cap the distribution amount to the remaining balance
+                        distributed_amount = min(amount_per_component, remaining_balance)
+
+                        # Create PaymentDistribution record
+                        PaymentDistribution.objects.create(
+                            collection=collection,
+                            payment_schedule=component if isinstance(component, PaymentSchedule) else None,
+                            additional_charge=component if isinstance(component, AdditionalCharge) else None,
+                            amount=distributed_amount
+                        )
+
+                        # Update component status
+                        total_paid_for_component = amount_paid + distributed_amount
+                        if total_paid_for_component >= component.total:
+                            component.status = 'paid'
+                        elif total_paid_for_component > 0:
+                            component.status = 'partially_paid'
+                        else:
+                            component.status = 'pending'
+                        component.save()
+
+                # Create Overpayment record if applicable
+                if overpayment_amount > 0:
+                    Overpayment.objects.create(
+                        tenancy=invoice.tenancy,
+                        invoice=invoice,
+                        collection=collection,
+                        amount=overpayment_amount,
+                        status='available'
+                    )
+
+                # Update invoice status
+                total_collected = (
+                    Collection.objects.filter(invoice=invoice, status='completed')
+                    .aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
+                )
+                if total_collected >= invoice.total_amount:
+                    invoice.status = 'paid'
+                elif total_collected > 0:
+                    invoice.status = 'partially_paid'
+                else:
+                    invoice.status = 'unpaid'
+                invoice.save()
+
+                return Response(serializer.data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {"error": f"An error occurred while updating the collection: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class CollectionDetailAPIView(APIView):
+    """
+    API to retrieve details of a specific collection, including full invoice details.
+
+    Endpoint: GET /api/collections/<int:pk>/
+    Purpose: Fetches detailed information about a collection, including invoice details,
+             payment schedules, additional charges, and tax details.
+    Response:
+        - 200 OK: Detailed collection data with invoice, payment schedules, additional charges, and tax details.
+        - 404 Not Found: Collection not found.
+        - 500 Internal Server Error: Unexpected server error.
+    Example Request:
+        curl -X GET http://localhost:8000/api/collections/1/
+    Example Response:
+        {
+            "id": 1,
+            "invoice": {
+                "id": 1,
+                "invoice_number": "INV-001",
+                "tenancy_name": "John Doe",
+                "end_date": "2025-12-31",
+                "total_amount": "1000.00",
+                "total_tax_amount": "100.00",
+                "total_amount_to_collect": "0.00",
+                "taxes": [
+                    {
+                        "tax_type": "GST",
+                        "tax_percentage": "18",
+                        "tax_amount": "90.00"
+                    }
+                ]
+            },
+            "amount": "300.00",
+            "collection_mode": "bank_transfer",
+            "collection_date": "2025-07-02",
+            "reference_number": "TX123",
+            "account_holder_name": "John Doe",
+            "account_number": "1234567890",
+            "cheque_number": null,
+            "cheque_date": null,
+            "status": "completed",
+            "payment_schedules": [
+                {
+                    "id": 1,
+                    "charge_type": "rent",
+                    "reason": "Monthly Rent",
+                    "due_date": "2025-07-01",
+                    "amount": "100.00",
+                    "tax": "10.00",
+                    "total": "110.00",
+                    "amount_paid": "110.00",
+                    "balance": "0.00"
+                },
+                {
+                    "id": 2,
+                    "charge_type": "rent",
+                    "reason": "Monthly Rent",
+                    "due_date": "2025-08-01",
+                    "amount": "100.00",
+                    "tax": "10.00",
+                    "total": "110.00",
+                    "amount_paid": "110.00",
+                    "balance": "0.00"
+                }
+            ],
+            "additional_charges": [
+                {
+                    "id": 1,
+                    "charge_type": "utility",
+                    "reason": "Electricity Bill",
+                    "due_date": "2025-07-01",
+                    "amount": "100.00",
+                    "tax": "10.00",
+                    "total": "110.00",
+                    "amount_paid": "110.00",
+                    "balance": "0.00"
+                }
+            ]
+        }
+    """
+    def get(self, request, pk):
+        try:
+            # Fetch collection with related invoice data
+            collection = Collection.objects.select_related(
+                'invoice', 'invoice__tenancy', 'invoice__tenancy__tenant'
+            ).get(pk=pk)
+            
+            # Fetch the invoice
+            invoice = collection.invoice
+            if not invoice:
+                return Response(
+                    {"error": "No invoice associated with this collection."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Fetch related payment schedules and additional charges
+            payment_schedules = PaymentSchedule.objects.filter(invoices=invoice)
+            additional_charges = AdditionalCharge.objects.filter(invoices=invoice)
+
+            # Calculate total collected and amount to collect
+            total_collected = sum(collection.amount for collection in invoice.collections.filter(status='completed'))
+            total_amount_to_collect = invoice.total_amount - total_collected
+
+            # Calculate tax details
+            tax_details = []
+            total_tax_amount = 0
+            for ps in payment_schedules:
+                if ps.charge_type and ps.charge_type.taxes.exists():
+                    for tax in ps.charge_type.taxes.all():
+                        tax_amount = ps.amount * (tax.tax_percentage / 100)
+                        total_tax_amount += tax_amount
+                        tax_details.append({
+                            'tax_type': tax.tax_type,
+                            'tax_percentage': str(tax.tax_percentage),
+                            'tax_amount': f"{tax_amount:.2f}"
+                        })
+            for ac in additional_charges:
+                if ac.charge_type and ac.charge_type.taxes.exists():
+                    for tax in ac.charge_type.taxes.all():
+                        tax_amount = ac.amount * (tax.tax_percentage / 100)
+                        total_tax_amount += tax_amount
+                        tax_details.append({
+                            'tax_type': tax.tax_type,
+                            'tax_percentage': str(tax.tax_percentage),
+                            'tax_amount': f"{tax_amount:.2f}"
+                        })
+
+            # Remove duplicate taxes
+            unique_tax_details = {
+                f"{tax['tax_type']}:{tax['tax_percentage']}": tax for tax in tax_details
+            }
+            tax_details = list(unique_tax_details.values())
+
+            # Serialize collection data
+            collection_data = CollectionSerializer(collection).data
+            
+            # Add invoice details with tax information
+            collection_data['invoice'] = {
+                'id': invoice.id,
+                'invoice_number': invoice.invoice_number,
+                'tenancy_name': invoice.tenancy.tenant.tenant_name if invoice.tenancy and invoice.tenancy.tenant else '',
+                'end_date': invoice.end_date.strftime('%Y-%m-%d') if invoice.end_date else '',
+                'total_amount': f"{invoice.total_amount or 0:.2f}",
+                'total_tax_amount': f"{total_tax_amount:.2f}",
+                'total_amount_to_collect': f"{total_amount_to_collect:.2f}",
+                'taxes': tax_details
+            }
+            
+            # Add payment schedules with balance and amount paid from PaymentDistribution
+            collection_data['payment_schedules'] = [
+                {
+                    'id': ps.id,
+                    'charge_type': ps.charge_type.name if ps.charge_type else '',
+                    'reason': ps.reason or '',
+                    'due_date': ps.due_date.strftime('%Y-%m-%d') if ps.due_date else '',
+                    'amount': f"{ps.amount or 0:.2f}",
+                    'tax': f"{ps.tax or 0:.2f}",
+                    'total': f"{ps.total or 0:.2f}",
+                    'amount_paid': f"{(
+                        PaymentDistribution.objects.filter(
+                            payment_schedule=ps,
+                            collection__status='completed'
+                        ).aggregate(total=Sum('amount'))['total'] or 0
+                    ):.2f}",
+                    'balance': f"{(ps.total or 0) - (
+                        PaymentDistribution.objects.filter(
+                            payment_schedule=ps,
+                            collection__status='completed'
+                        ).aggregate(total=Sum('amount'))['total'] or 0
+                    ):.2f}"
+                } for ps in payment_schedules
+            ]
+            
+            # Add additional charges with balance and amount paid from PaymentDistribution
+            collection_data['additional_charges'] = [
+                {
+                    'id': ac.id,
+                    'charge_type': ac.charge_type.name if ac.charge_type else '',
+                    'reason': ac.reason or '',
+                    'due_date': ac.due_date.strftime('%Y-%m-%d') if ac.due_date else '',
+                    'amount': f"{ac.amount or 0:.2f}",
+                    'tax': f"{ac.tax or 0:.2f}",
+                    'total': f"{ac.total or 0:.2f}",
+                    'amount_paid': f"{(
+                        PaymentDistribution.objects.filter(
+                            additional_charge=ac,
+                            collection__status='completed'
+                        ).aggregate(total=Sum('amount'))['total'] or 0
+                    ):.2f}",
+                    'balance': f"{(ac.total or 0) - (
+                        PaymentDistribution.objects.filter(
+                            additional_charge=ac,
+                            collection__status='completed'
+                        ).aggregate(total=Sum('amount'))['total'] or 0
+                    ):.2f}"
+                } for ac in additional_charges
+            ]
+
+            return Response(collection_data, status=status.HTTP_200_OK)
+
+        except Collection.DoesNotExist:
+            return Response(
+                {"error": "Collection not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"An error occurred: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -734,17 +1166,29 @@ class ExcessDepositsAPIView(APIView):
             total_excess = 0.0
             already_refunded = 0.0
 
+            # Calculate total excess from Overpayment model
+            total_excess = float(
+                Overpayment.objects.filter(
+                    tenancy=tenancy, status='available'
+                ).aggregate(total=Sum('amount'))['total'] or 0.0
+            )
+
             payment_schedules = PaymentSchedule.objects.filter(
                 tenancy=tenancy, status__in=['paid', 'partially_paid', 'invoiced']
             ).select_related('charge_type').prefetch_related('invoices')
 
             for ps in payment_schedules:
                 invoices = ps.invoices.all()
-                collections = Collection.objects.filter(invoice__in=invoices)
+                # Use PaymentDistribution to get collected amount
+                collections = PaymentDistribution.objects.filter(
+                    payment_schedule=ps,
+                    collection__status='completed'
+                )
                 invoice_collections = {}
                 for invoice in invoices:
                     total_collected = (
-                        collections.filter(invoice=invoice).aggregate(total=Sum('amount'))['total'] or 0.0
+                        collections.filter(collection__invoice=invoice)
+                        .aggregate(total=Sum('amount'))['total'] or 0.0
                     )
                     invoice_collections[invoice.invoice_number] = float(total_collected)
 
@@ -758,15 +1202,11 @@ class ExcessDepositsAPIView(APIView):
 
                 total_or_amount = float(ps.total or ps.amount)
                 deposit_amount = total_or_amount if is_deposit and ps.status in ['paid', 'invoiced'] else 0.0
-                excess = (
-                    float(collected - total_or_amount)
-                    if collected > total_or_amount and ps.status in ['paid', 'partially_paid']
-                    else 0.0
-                )
+                # Excess is handled at tenancy level via Overpayment, so set to 0 here
+                excess = 0.0
                 total_refundable = deposit_amount + excess
 
                 total_deposit += deposit_amount
-                total_excess += excess
 
                 if total_refundable > 0:
                     refund_items.append({
@@ -794,11 +1234,16 @@ class ExcessDepositsAPIView(APIView):
 
             for ac in additional_charges:
                 invoices = ac.invoices.all()
-                collections = Collection.objects.filter(invoice__in=invoices)
+                # Use PaymentDistribution to get collected amount
+                collections = PaymentDistribution.objects.filter(
+                    additional_charge=ac,
+                    collection__status='completed'
+                )
                 invoice_collections = {}
                 for invoice in invoices:
                     total_collected = (
-                        collections.filter(invoice=invoice).aggregate(total=Sum('amount'))['total'] or 0.0
+                        collections.filter(collection__invoice=invoice)
+                        .aggregate(total=Sum('amount'))['total'] or 0.0
                     )
                     invoice_collections[invoice.invoice_number] = float(total_collected)
 
@@ -812,15 +1257,11 @@ class ExcessDepositsAPIView(APIView):
 
                 total_or_amount = float(ac.total or ac.amount)
                 deposit_amount = total_or_amount if is_deposit and ac.status in ['paid', 'invoiced'] else 0.0
-                excess = (
-                    float(collected - total_or_amount)
-                    if collected > total_or_amount and ac.status in ['paid', 'partially_paid']
-                    else 0.0
-                )
+                # Excess is handled at tenancy level via Overpayment, so set to 0 here
+                excess = 0.0
                 total_refundable = deposit_amount + excess
 
                 total_deposit += deposit_amount
-                total_excess += excess
 
                 if total_refundable > 0:
                     refund_items.append({

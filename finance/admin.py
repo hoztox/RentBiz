@@ -5,3 +5,5 @@ from .models import *
 
 admin.site.register(Expense)
 admin.site.register(Collection)
+admin.site.register(Overpayment)
+admin.site.register(PaymentDistribution)

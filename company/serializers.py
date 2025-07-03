@@ -2,6 +2,7 @@
 from rest_framework import serializers
 from django.contrib.auth.hashers import make_password
 from .models import *
+from finance.models import PaymentDistribution
 from decimal import Decimal
 from datetime import datetime, timedelta,date
 from django.db import transaction
@@ -161,9 +162,6 @@ class BuildingSerializer(serializers.ModelSerializer):
         return instance
 
 
-     
-    
-    
 class UnitTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = UnitType
@@ -771,10 +769,11 @@ class PaymentScheduleGetSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def get_amount_paid(self, obj):
-        # Sum collections for invoices linked to this payment schedule
-        total_paid = obj.invoices.filter(collections__status='completed').aggregate(
-            total=Sum('collections__amount')
-        )['total'] or 0
+        # Sum the distributed amounts for this payment schedule from PaymentDistribution
+        total_paid = PaymentDistribution.objects.filter(
+            payment_schedule=obj,
+            collection__status='completed'
+        ).aggregate(total=Sum('amount'))['total'] or 0
         return float(total_paid)
 
     def get_balance(self, obj):
@@ -793,17 +792,18 @@ class AdditionalChargeGetSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def get_amount_paid(self, obj):
-        # Sum collections for invoices linked to this additional charge
-        total_paid = obj.invoices.filter(collections__status='completed').aggregate(
-            total=Sum('collections__amount')
-        )['total'] or 0
+        # Sum the distributed amounts for this additional charge from PaymentDistribution
+        total_paid = PaymentDistribution.objects.filter(
+            additional_charge=obj,
+            collection__status='completed'
+        ).aggregate(total=Sum('amount'))['total'] or 0
         return float(total_paid)
 
     def get_balance(self, obj):
         total = float(obj.total or 0)
         amount_paid = self.get_amount_paid(obj)
         return round(total - amount_paid, 2)
-         
+
 
 class TenancyDetailSerializer(serializers.ModelSerializer):
     tenant_name = serializers.CharField(source='tenant.name', read_only=True)
@@ -814,8 +814,7 @@ class TenancyDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tenancy
         fields = '__all__'
-        
-        
+       
         
 class TenancyListSerializer(serializers.ModelSerializer):
     tenant = TenantSerializer()
@@ -886,7 +885,6 @@ class TenancyRenewalSerializer(serializers.ModelSerializer):
  
         self._create_payment_schedules(renewed_tenancy)
         
-         
         for charge_data in additional_charges_data:
             try:
                 charge_type = Charges.objects.filter(id=charge_data['charge_type']).first()
@@ -915,7 +913,7 @@ class TenancyRenewalSerializer(serializers.ModelSerializer):
         deposit_charge = Charges.objects.filter(name='Deposit').first()
         commission_charge = Charges.objects.filter(name='Commission').first()
 
- 
+
         if tenancy.deposit and deposit_charge:
             vat_amount = Decimal('0.00')
             if deposit_charge.vat_percentage:
@@ -932,7 +930,6 @@ class TenancyRenewalSerializer(serializers.ModelSerializer):
                 total=total
             ))
 
- 
         if tenancy.commision and commission_charge:
             vat_amount = Decimal('0.00')
             if commission_charge.vat_percentage:
@@ -948,8 +945,7 @@ class TenancyRenewalSerializer(serializers.ModelSerializer):
                 vat=vat_amount,
                 total=total
             ))
-
-      
+   
         if tenancy.rent_per_frequency and tenancy.no_payments and rent_charge:
             rent_vat = Decimal('0.00')
             if rent_charge.vat_percentage:
@@ -1017,6 +1013,7 @@ class InvoiceItemSerializer(serializers.Serializer):
     charge_id = serializers.IntegerField(required=False, allow_null=True)
     company = serializers.IntegerField(required=False, allow_null=True)
     user = serializers.IntegerField(required=False, allow_null=True)
+
 
 class InvoiceSerializer(serializers.ModelSerializer):
     tenancy = serializers.PrimaryKeyRelatedField(queryset=Tenancy.objects.all())
@@ -1131,6 +1128,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
         return f'INV{current_year}{new_sequence:04d}'
 
+
 class InvoiceGetSerializer(serializers.ModelSerializer):
     tenancy = TenancyListSerializer(read_only=True)
     payment_schedules = PaymentScheduleGetSerializer(many=True, read_only=True)
@@ -1172,7 +1170,7 @@ class AutoInvoiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Invoice
         fields = [
-            'id', 'tenancy', 'invoice_date', 'end_date', 'building_name', 'unit_name',
+            'id', 'tenancy','invoice_date', 'end_date', 'building_name', 'unit_name',
             'items', 'total_amount', 'company', 'user', 'invoice_number', 'status',
             'is_automated', 'payment_schedules', 'additional_charges'
         ]
