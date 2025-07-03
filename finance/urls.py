@@ -3,7 +3,8 @@ from .views import (
     CreateRefundAPIView, RefundListAPIView, ExcessDepositsAPIView,
     UnpaidInvoicesAPIView, InvoiceDetailsAPIView, CollectionCreateAPIView,
     CollectionListAPIView, AddExpenseAPIView, CalculateTotalView,
-    ExpensesByCompanyAPIView, ExpenseUpdateView
+    ExpensesByCompanyAPIView, ExpenseUpdateView, CollectionUpdateAPIView,
+    CollectionDetailAPIView
 )
 from .reports import (
     CollectionCSVDownloadAPIView,
@@ -47,7 +48,17 @@ urlpatterns = [
         'create-collection/',
         CollectionCreateAPIView.as_view(),
         name='create-collection'
-    ),  
+    ),
+    path(
+        'collections/<int:pk>/update/',
+        CollectionUpdateAPIView.as_view(),
+        name='collection-update'
+     ),
+    path(
+        'collections/<int:pk>/', 
+        CollectionDetailAPIView.as_view(), 
+        name='collection-detail'
+        ), 
     path(
         'collections/',
         CollectionListAPIView.as_view(),

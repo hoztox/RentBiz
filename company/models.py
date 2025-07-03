@@ -447,8 +447,8 @@ class Tenancy(models.Model):
             self.tenancy_code = self.generate_tenancy_code()
 
   
-        if self.rent_per_frequency and self.no_payments:
-            self.total_rent_receivable = self.rent_per_frequency * Decimal(self.no_payments)
+        # if self.rent_per_frequency and self.rental_months:
+        #     self.total_rent_receivable = self.rent_per_frequency * Decimal(self.rental_months)
         
         super().save(*args, **kwargs)
 

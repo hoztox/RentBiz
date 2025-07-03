@@ -2,6 +2,7 @@
 from rest_framework import serializers
 from django.contrib.auth.hashers import make_password
 from .models import *
+from finance.models import PaymentDistribution
 from decimal import Decimal
 from datetime import datetime, timedelta,date
 from django.db import transaction
@@ -161,9 +162,6 @@ class BuildingSerializer(serializers.ModelSerializer):
         return instance
 
 
-     
-    
-    
 class UnitTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = UnitType
@@ -205,7 +203,6 @@ class UnitSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def create(self, validated_data):
-        print("Creating unit with validated_data:", validated_data)
         documents_data = validated_data.pop('unit_comp', [])
         unit = Units.objects.create(**validated_data)
 
@@ -215,29 +212,23 @@ class UnitSerializer(serializers.ModelSerializer):
         return unit
 
     def update(self, instance, validated_data):
-        print("Serializer update called with validated_data:", validated_data)
         
         # Extract and remove unit_comp data
         documents_data = validated_data.pop('unit_comp', None)
-        print(f"Documents data extracted: {documents_data}")
 
         # Update main unit fields
         for attr, value in validated_data.items():
             print(f"Setting {attr} = {value}")
             setattr(instance, attr, value)
         instance.save()
-        print("Main unit instance saved")
 
         # Process unit_comp documents only if provided
         if documents_data is not None:
             existing_docs = {doc.id: doc for doc in instance.unit_comp.all()}
-            print(f"Existing documents: {list(existing_docs.keys())}")
             updated_ids = []
 
             for doc_data in documents_data:
-                print(f"Processing document data: {doc_data}")
                 doc_id = doc_data.get('id')
-                print(f"Document ID from frontend: {doc_id} (type: {type(doc_id)})")
 
                 try:
                     doc_id = int(doc_id) if doc_id is not None else None
@@ -250,7 +241,6 @@ class UnitSerializer(serializers.ModelSerializer):
                 create_data.pop('file_index', None)
                 
                 new_doc = UnitDocumentType.objects.create(unit=instance, **create_data)
-                print(f"New document created with ID: {new_doc.id}, file: {new_doc.upload_file}")
                 updated_ids.append(new_doc.id)
 
             # Delete documents not included in the update
@@ -263,6 +253,7 @@ class UnitSerializer(serializers.ModelSerializer):
 
         print("Serializer update completed")
         return instance
+
 class MasterDocumentTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = MasterDocumentType
@@ -548,8 +539,6 @@ class PaymentScheduleSerializer(serializers.ModelSerializer):
             return obj.get('tax_details', [])
         return obj.tax_details if hasattr(obj, 'tax_details') else []
 
-
-
 class TenancyCreateSerializer(serializers.ModelSerializer):
     additional_charges = AdditionalChargeSerializer(many=True, required=False)
     payment_schedules = PaymentScheduleSerializer(many=True, read_only=True)
@@ -571,6 +560,13 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def create(self, validated_data):
         additional_charges_data = validated_data.pop('additional_charges', [])
+        
+        # Calculate total_rent_receivable if rent_per_frequency and rental_months are provided
+        if validated_data.get('rent_per_frequency') and validated_data.get('rental_months'):
+            validated_data['total_rent_receivable'] = (
+                validated_data['rent_per_frequency'] * Decimal(str(validated_data['rental_months']))
+            )
+
         tenancy = super().create(validated_data)
 
         for charge_data in additional_charges_data:
@@ -603,6 +599,12 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         # Pop additional_charges data to handle separately
         additional_charges_data = validated_data.pop('additional_charges', None)
+
+        # Calculate total_rent_receivable if rent_per_frequency and rental_months are provided
+        if validated_data.get('rent_per_frequency') and validated_data.get('rental_months'):
+            validated_data['total_rent_receivable'] = (
+                validated_data['rent_per_frequency'] * Decimal(str(validated_data['rental_months']))
+            )
 
         # Update tenancy fields
         for attr, value in validated_data.items():
@@ -681,10 +683,15 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
             ))
 
         if tenancy.rent_per_frequency and tenancy.no_payments and rent_charge:
-            rent_tax, tax_details = self._calculate_tax(tenancy.rent_per_frequency, rent_charge, tenancy.first_rent_due_on)
+            # Calculate total rent based on rental_months * rent_per_frequency
             rental_months = tenancy.rental_months or 12
-            payment_frequency_months = rental_months // tenancy.no_payments if tenancy.no_payments > 0 else 1
+            total_rent = tenancy.rent_per_frequency * rental_months
+            # Calculate rent per payment
+            rent_per_payment = total_rent / tenancy.no_payments if tenancy.no_payments > 0 else total_rent
+            rent_tax, tax_details = self._calculate_tax(rent_per_payment, rent_charge, tenancy.first_rent_due_on)
 
+            # Calculate payment frequency in months
+            payment_frequency_months = rental_months // tenancy.no_payments if tenancy.no_payments > 0 else 1
             reason_map = {
                 1: 'Monthly Rent',
                 2: 'Bi-Monthly Rent',
@@ -694,24 +701,28 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
             }
             reason = reason_map.get(payment_frequency_months, f'{payment_frequency_months}-Monthly Rent')
 
-            for i in range(tenancy.no_payments):
-                due_date = tenancy.first_rent_due_on
-                if i > 0:
-                    year = due_date.year
-                    month = due_date.month + (i * payment_frequency_months)
-                    while month > 12:
-                        year += 1
-                        month -= 12
-                    due_date = due_date.replace(year=year, month=month)
+            # Convert first_rent_due_on to datetime for date calculations
+            due_date_obj = tenancy.first_rent_due_on
+            if isinstance(due_date_obj, str):
+                due_date_obj = datetime.strptime(due_date_obj, '%Y-%m-%d').date()
 
-                total = tenancy.rent_per_frequency + rent_tax
+            for i in range(tenancy.no_payments):
+                # Calculate due date for each payment (increment by payment_frequency_months)
+                year = due_date_obj.year
+                month = due_date_obj.month + (i * payment_frequency_months)
+                while month > 12:
+                    year += 1
+                    month -= 12
+                due_date = due_date_obj.replace(year=year, month=month)
+
+                total = rent_per_payment + rent_tax
                 payment_schedules.append(PaymentSchedule(
                     tenancy=tenancy,
                     charge_type=rent_charge,
                     reason=reason,
                     due_date=due_date,
                     status='pending',
-                    amount=tenancy.rent_per_frequency,
+                    amount=rent_per_payment,
                     tax=rent_tax,
                     total=total
                 ))
@@ -748,7 +759,6 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
 
         return tax_amount.quantize(Decimal('0.01')), tax_details
 
-
 class PaymentScheduleGetSerializer(serializers.ModelSerializer):
     charge_type = serializers.CharField(source='charge_type.name', read_only=True)
     amount_paid = serializers.SerializerMethodField()
@@ -759,10 +769,11 @@ class PaymentScheduleGetSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def get_amount_paid(self, obj):
-        # Sum collections for invoices linked to this payment schedule
-        total_paid = obj.invoices.filter(collections__status='completed').aggregate(
-            total=Sum('collections__amount')
-        )['total'] or 0
+        # Sum the distributed amounts for this payment schedule from PaymentDistribution
+        total_paid = PaymentDistribution.objects.filter(
+            payment_schedule=obj,
+            collection__status='completed'
+        ).aggregate(total=Sum('amount'))['total'] or 0
         return float(total_paid)
 
     def get_balance(self, obj):
@@ -781,17 +792,18 @@ class AdditionalChargeGetSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def get_amount_paid(self, obj):
-        # Sum collections for invoices linked to this additional charge
-        total_paid = obj.invoices.filter(collections__status='completed').aggregate(
-            total=Sum('collections__amount')
-        )['total'] or 0
+        # Sum the distributed amounts for this additional charge from PaymentDistribution
+        total_paid = PaymentDistribution.objects.filter(
+            additional_charge=obj,
+            collection__status='completed'
+        ).aggregate(total=Sum('amount'))['total'] or 0
         return float(total_paid)
 
     def get_balance(self, obj):
         total = float(obj.total or 0)
         amount_paid = self.get_amount_paid(obj)
         return round(total - amount_paid, 2)
-         
+
 
 class TenancyDetailSerializer(serializers.ModelSerializer):
     tenant_name = serializers.CharField(source='tenant.name', read_only=True)
@@ -802,8 +814,7 @@ class TenancyDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tenancy
         fields = '__all__'
-        
-        
+       
         
 class TenancyListSerializer(serializers.ModelSerializer):
     tenant = TenantSerializer()
@@ -874,7 +885,6 @@ class TenancyRenewalSerializer(serializers.ModelSerializer):
  
         self._create_payment_schedules(renewed_tenancy)
         
-         
         for charge_data in additional_charges_data:
             try:
                 charge_type = Charges.objects.filter(id=charge_data['charge_type']).first()
@@ -903,7 +913,7 @@ class TenancyRenewalSerializer(serializers.ModelSerializer):
         deposit_charge = Charges.objects.filter(name='Deposit').first()
         commission_charge = Charges.objects.filter(name='Commission').first()
 
- 
+
         if tenancy.deposit and deposit_charge:
             vat_amount = Decimal('0.00')
             if deposit_charge.vat_percentage:
@@ -920,7 +930,6 @@ class TenancyRenewalSerializer(serializers.ModelSerializer):
                 total=total
             ))
 
- 
         if tenancy.commision and commission_charge:
             vat_amount = Decimal('0.00')
             if commission_charge.vat_percentage:
@@ -936,8 +945,7 @@ class TenancyRenewalSerializer(serializers.ModelSerializer):
                 vat=vat_amount,
                 total=total
             ))
-
-      
+   
         if tenancy.rent_per_frequency and tenancy.no_payments and rent_charge:
             rent_vat = Decimal('0.00')
             if rent_charge.vat_percentage:
@@ -1005,6 +1013,7 @@ class InvoiceItemSerializer(serializers.Serializer):
     charge_id = serializers.IntegerField(required=False, allow_null=True)
     company = serializers.IntegerField(required=False, allow_null=True)
     user = serializers.IntegerField(required=False, allow_null=True)
+
 
 class InvoiceSerializer(serializers.ModelSerializer):
     tenancy = serializers.PrimaryKeyRelatedField(queryset=Tenancy.objects.all())
@@ -1119,6 +1128,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
         return f'INV{current_year}{new_sequence:04d}'
 
+
 class InvoiceGetSerializer(serializers.ModelSerializer):
     tenancy = TenancyListSerializer(read_only=True)
     payment_schedules = PaymentScheduleGetSerializer(many=True, read_only=True)
@@ -1160,7 +1170,7 @@ class AutoInvoiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Invoice
         fields = [
-            'id', 'tenancy', 'invoice_date', 'end_date', 'building_name', 'unit_name',
+            'id', 'tenancy','invoice_date', 'end_date', 'building_name', 'unit_name',
             'items', 'total_amount', 'company', 'user', 'invoice_number', 'status',
             'is_automated', 'payment_schedules', 'additional_charges'
         ]
