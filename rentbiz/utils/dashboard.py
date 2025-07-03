@@ -2,7 +2,7 @@
 from rest_framework.views import APIView
 from django.db import models
 from rest_framework.response import Response
-from company.models import Building,Units,Invoice,Tenancy
+from company.models import Building,Units,Invoice,Tenancy,PaymentSchedule
 from finance.models import Collection,Invoice,Expense
 from datetime import datetime
 from django.utils import timezone
@@ -15,7 +15,8 @@ from django.db.models import Q
 from django.utils import timezone
 from datetime import date
 from company.models import Invoice
-from company.serializers import InvoiceSerializer
+from company.serializers import DashboardInvoiceSerializer
+
 
 
 
@@ -274,3 +275,31 @@ class FinancialReportView(APIView):
     
 
 
+
+class CollectionListView(APIView):
+    def get(self, request, company_id):
+        search_query = request.query_params.get('search', '').strip()
+        status_filter = request.query_params.get('status', '').strip().lower()
+
+        invoices = Invoice.objects.filter(company__id=company_id)
+
+        # Search filter
+        if search_query:
+            invoices = invoices.filter(
+                Q(id__icontains=search_query) |
+                Q(tenancy__tenant__tenant_name__icontains=search_query) |
+                Q(tenancy__building__building_name__icontains=search_query) |
+                Q(tenancy__unit__unit_name__icontains=search_query)
+            )
+
+        # Status filter
+        if status_filter in ['paid', 'unpaid', 'partially_paid']:
+            invoices = invoices.filter(status=status_filter)
+
+        elif status_filter == 'overdue':
+            today = date.today()
+            invoices = invoices.filter(end_date__lt=today, status__in=['unpaid', 'partially_paid'])
+
+        invoices = invoices.order_by('id')
+
+        return paginate_queryset(invoices, request, DashboardInvoiceSerializer)
