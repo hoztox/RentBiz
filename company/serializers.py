@@ -6,7 +6,6 @@ from decimal import Decimal
 from datetime import datetime, timedelta,date
 from django.db import transaction
 from django.db.models import Sum
-
 from django.core.exceptions import ValidationError
 
 
@@ -1303,3 +1302,43 @@ class TerminationChargeSerializer(serializers.Serializer):
                 'tax_details': self.context.get('tax_details', [])
             }
         return super().to_representation(instance)
+    
+
+class DashboardInvoiceSerializer(serializers.ModelSerializer):
+    invoice_date = serializers.DateField(source='in_date')
+    building_name = serializers.SerializerMethodField()
+    unit_name = serializers.SerializerMethodField()
+    tenant_name = serializers.SerializerMethodField()
+   
+    due_date = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Invoice
+        fields = [
+            'id',
+            'invoice_date',
+            'end_date',
+            'building_name',
+            'unit_name',
+            'tenant_name',
+            'due_date',
+            'total_amount',
+            'status',
+        ]
+
+    def get_building_name(self, obj):
+        return obj.tenancy.building.building_name if obj.tenancy and obj.tenancy.building else None
+
+    def get_unit_name(self, obj):
+        return obj.tenancy.unit.unit_name if obj.tenancy and obj.tenancy.unit else None
+
+    def get_tenant_name(self, obj):
+        return obj.tenancy.tenant.tenant_name if obj.tenancy and obj.tenancy.tenant else None
+
+    
+
+    def get_due_date(self, obj):
+        first_schedule = obj.payment_schedules.first()
+        if first_schedule:
+            return first_schedule.due_date
+        return None
