@@ -1425,7 +1425,7 @@ class CreateRefundAPIView(APIView):
                 refund_method=payment_method,
                 reason=remarks,
                 processed_date=payment_date,
-                processed_by=processed_by
+                processed_by=processed_by if processed_by else None
             )
 
             return Response(
@@ -1498,5 +1498,170 @@ class RefundListAPIView(APIView):
         except Exception as e:
             return Response(
                 {'error': 'Failed to fetch refunds'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class UpdateRefundAPIView(APIView):
+    """
+    API to update an existing refund for a tenancy.
+
+    Endpoint: PUT /api/refunds/<refund_id>/
+    Purpose: Updates a refund record for a tenancy, validating that the updated refund amount
+             does not exceed the available refundable amount (deposits + excess).
+    Request Body:
+        {
+            "tenancy_id": <tenancy_id> (int, required),
+            "amount_refunded": <amount> (decimal, required),
+            "payment_method": <method> (string, required),
+            "remarks": <remarks> (string, optional),
+            "payment_date": <date> (string, YYYY-MM-DD, required),
+            "account_holder_name": <name> (string, optional),
+            "account_number": <number> (string, optional),
+            "cheque_number": <number> (string, optional),
+            "cheque_date": <date> (string, YYYY-MM-DD, optional)
+        }
+    Response:
+        - 200 OK: {"message": "Refund updated successfully"}
+        - 400 Bad Request: Missing required fields or refund amount exceeds limit.
+        - 404 Not Found: Refund or tenancy not found.
+        - 500 Internal Server Error: Unexpected server error.
+    Example Request:
+        curl -X PUT http://localhost:8000/api/refunds/1/ \
+        -H "Content-Type: application/json" \
+        -d '{"tenancy_id": 1, "amount_refunded": 1000.00, "payment_method": "bank_transfer", "payment_date": "2025-07-01"}'
+    Example Response:
+        {
+            "message": "Refund updated successfully"
+        }
+    """
+
+    def put(self, request, refund_id):
+        try:
+            refund = get_object_or_404(Refund, id=refund_id)
+            data = request.data
+            tenancy_id = data.get('tenancy_id')
+            amount_refunded = float(data.get('amount_refunded') or 0)
+            payment_method = data.get('payment_method')
+            remarks = data.get('remarks')
+            payment_date = data.get('payment_date')
+            account_holder_name = data.get('account_holder_name')
+            account_number = data.get('account_number')
+            cheque_number = data.get('cheque_number')
+            cheque_date = data.get('cheque_date')
+            processed_by_id = request.user.id if request.user.is_authenticated else None
+
+            # Validate required fields
+            required_fields = [tenancy_id, payment_method, payment_date, amount_refunded]
+            if payment_method in ['bank_transfer', 'cheque']:
+                required_fields.extend([account_holder_name, account_number])
+            if payment_method == 'cheque':
+                required_fields.extend([cheque_number, cheque_date])
+
+            if not all(field for field in required_fields if field is not None):
+                return Response(
+                    {'error': 'Missing required fields or invalid refund amount'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            tenancy = get_object_or_404(Tenancy, id=tenancy_id)
+            processed_by = get_object_or_404(Users, id=processed_by_id) if processed_by_id else None
+
+            # Calculate total refundable amount
+            deposit_charge_codes = ChargeCode.objects.filter(title__iexact="Deposit")
+            total_deposit = 0.0
+            total_excess = 0.0
+
+            payment_schedules = PaymentSchedule.objects.filter(
+                tenancy=tenancy, status__in=['paid', 'partially_paid', 'invoiced']
+            ).select_related('charge_type').prefetch_related('invoices')
+
+            for ps in payment_schedules:
+                invoices = ps.invoices.all()
+                collections = Collection.objects.filter(invoice__in=invoices)
+                collected = float(collections.aggregate(total=Sum('amount'))['total'] or 0.0)
+                is_deposit = (
+                    ps.charge_type.charge_code in deposit_charge_codes
+                    if ps.charge_type and hasattr(ps.charge_type, 'charge_code') and ps.charge_type.charge_code
+                    else False
+                )
+                total_or_amount = float(ps.total or ps.amount)
+                deposit_amount = total_or_amount if is_deposit and ps.status in ['paid', 'invoiced'] else 0.0
+                total_deposit += deposit_amount
+
+            additional_charges = AdditionalCharge.objects.filter(
+                tenancy=tenancy, status__in=['paid', 'partially_paid', 'invoiced']
+            ).select_related('charge_type').prefetch_related('invoices')
+
+            for ac in additional_charges:
+                invoices = ac.invoices.all()
+                collections = Collection.objects.filter(invoice__in=invoices)
+                collected = float(collections.aggregate(total=Sum('amount'))['total'] or 0.0)
+                is_deposit = (
+                    ac.charge_type.charge_code in deposit_charge_codes
+                    if ac.charge_type and hasattr(ac.charge_type, 'charge_code') and ac.charge_type.charge_code
+                    else False
+                )
+                total_or_amount = float(ac.total or ac.amount)
+                deposit_amount = total_or_amount if is_deposit and ac.status in ['paid', 'invoiced'] else 0.0
+                total_deposit += deposit_amount
+
+            total_excess = float(
+                Overpayment.objects.filter(
+                    tenancy=tenancy, status='available'
+                ).aggregate(total=Sum('amount'))['total'] or 0.0
+            )
+
+            already_refunded = float(
+                Refund.objects.filter(tenancy=tenancy).exclude(id=refund_id).aggregate(total=Sum('amount'))['total'] or 0.0
+            )
+            total_refundable = total_deposit + total_excess
+
+            if amount_refunded > (total_refundable - already_refunded):
+                return Response(
+                    {'error': 'Refund amount exceeds available refundable amount'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Update refund
+            refund_type = (
+                'deposit' if total_deposit > 0 else 'excess' if total_excess > 0 else 'other'
+            )
+            refund.tenancy = tenancy
+            refund.refund_type = refund_type
+            refund.amount = amount_refunded
+            refund.refund_method = payment_method
+            refund.reason = remarks
+            refund.processed_date = payment_date
+            refund.processed_by = processed_by
+            refund.reference_number = data.get('reference_number')
+            if payment_method in ['bank_transfer', 'cheque']:
+                refund.account_holder_name = account_holder_name
+                refund.account_number = account_number
+            else:
+                refund.account_holder_name = None
+                refund.account_number = None
+            if payment_method == 'cheque':
+                refund.cheque_number = cheque_number
+                refund.cheque_date = cheque_date
+            else:
+                refund.cheque_number = None
+                refund.cheque_date = None
+            refund.save()
+
+            return Response(
+                {'message': 'Refund updated successfully'},
+                status=status.HTTP_200_OK
+            )
+
+        except Refund.DoesNotExist:
+            return Response({'error': 'Refund not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Tenancy.DoesNotExist:
+            return Response({'error': 'Tenancy not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Users.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response(
+                {'error': f"An error occurred: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
