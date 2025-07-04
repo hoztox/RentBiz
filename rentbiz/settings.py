@@ -116,9 +116,8 @@ CORS_ALLOW_ALL_METHODS = True
 CORS_ALLOWED_ORIGINS = [
     
     "http://localhost:5173",
-    "https://main.d29dunf2679alh.amplifyapp.com"
-   
- 
+    "https://main.d29dunf2679alh.amplifyapp.com",
+    "https://1b48-152-58-216-99.ngrok-free.app",
 
 ]
 

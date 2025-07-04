@@ -4,7 +4,7 @@ from .views import (
     UnpaidInvoicesAPIView, InvoiceDetailsAPIView, CollectionCreateAPIView,
     CollectionListAPIView, AddExpenseAPIView, CalculateTotalView,
     ExpensesByCompanyAPIView, ExpenseUpdateView, CollectionUpdateAPIView,
-    CollectionDetailAPIView
+    CollectionDetailAPIView, UpdateRefundAPIView
 )
 from .reports import (
     CollectionCSVDownloadAPIView,
@@ -29,6 +29,11 @@ urlpatterns = [
         '<int:tenancy_id>/excess-deposits/',
         ExcessDepositsAPIView.as_view(),
         name='excess-deposits'
+    ),
+    path(
+        'finance/refunds/<int:refund_id>/', 
+        UpdateRefundAPIView.as_view(),
+         name='update-refund'
     ),
 
     # ------------------------------------------------------------------
