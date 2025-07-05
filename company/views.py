@@ -1806,6 +1806,8 @@ class TenancyCreateView(APIView):
 
 class TenancyDetailView(APIView):
     """Get tenancy details with payment schedules"""
+    def get_object(self, pk):
+        return get_object_or_404(Tenancy, pk=pk)
 
     def get(self, request, pk):
         try:
@@ -1825,14 +1827,21 @@ class TenancyDetailView(APIView):
             }, status=status.HTTP_404_NOT_FOUND)
 
     def put(self, request, pk, format=None):
-        tenancy = get_object_or_404(Tenancy, pk=pk)
+        tenancy = self.get_object(pk)
         serializer = TenancyCreateSerializer(tenancy, data=request.data, partial=False)  
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
-        
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+    
+    def patch(self, request, pk, format=None):
+        tenancy = self.get_object(pk)
+        serializer = TenancyCreateSerializer(tenancy, data=request.data, partial=True)  # Partial update
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+    
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     def delete(self, request, pk):
         try:
             tenancy = Tenancy.objects.get(pk=pk)

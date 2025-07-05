@@ -547,13 +547,29 @@ class TenancyCreateSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def validate(self, data):
-        required_fields = [
-            'tenant', 'building', 'unit', 'rental_months', 'start_date',
-            'no_payments', 'first_rent_due_on', 'remarks'
-        ]
-        for field in required_fields:
-            if field not in data or not data[field]:
-                raise serializers.ValidationError(f"{field.replace('_', ' ')} is required.")
+        
+        if not self.instance:  # This is a new instance (CREATE)
+            required_fields = [
+                'tenant', 'building', 'unit', 'rental_months', 'start_date',
+                'no_payments', 'first_rent_due_on', 'remarks'
+            ]
+            for field in required_fields:
+                if field not in data or not data[field]:
+                    raise serializers.ValidationError(f"{field.replace('_', ' ')} is required.")
+        
+        
+        elif not self.partial:  # This is a full update (PUT)
+           
+            required_fields = [
+                'tenant', 'building', 'unit', 'rental_months', 'start_date',
+                'no_payments', 'first_rent_due_on', 'remarks'
+            ]
+            for field in required_fields:
+                # Check if field is in data or if current value is empty
+                field_value = data.get(field, getattr(self.instance, field, None))
+                if not field_value:
+                    raise serializers.ValidationError(f"{field.replace('_', ' ')} is required.")
+        
         return data
 
     @transaction.atomic
