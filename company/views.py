@@ -1855,6 +1855,23 @@ class TenancyDetailView(APIView):
                 'success': False,
                 'message': 'Tenancy not found'
             }, status=status.HTTP_404_NOT_FOUND)
+        
+    def post(self, request, pk):
+        action = request.query_params.get('action', '').lower()
+        if action == 'reject':
+            tenancy = self.get_object(pk)
+            tenancy.status = 'vacant'  # Or 'rejected' if you prefer
+            tenancy.save()
+            return Response({
+                'success': True,
+                'message': 'Tenancy rejected successfully.',
+                'status': tenancy.status
+            }, status=status.HTTP_200_OK)
+
+        return Response({
+            'success': False,
+            'message': 'Invalid action.'
+        }, status=status.HTTP_400_BAD_REQUEST)
       
 
 
