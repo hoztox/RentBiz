@@ -1806,15 +1806,18 @@ class TenancyCreateView(APIView):
 
 class TenancyDetailView(APIView):
     """Get tenancy details with payment schedules"""
+
+
     def get_object(self, pk):
-        return get_object_or_404(Tenancy, pk=pk)
+        tenancy = get_object_or_404(Tenancy, pk=pk)
+        if tenancy.status == 'closed':
+            raise Tenancy.DoesNotExist("This tenancy is closed.")
+        return tenancy
 
     def get(self, request, pk):
         try:
-            tenancy = Tenancy.objects.select_related(
-                'tenant', 'building', 'unit').get(pk=pk)
+            tenancy = self.get_object(pk)
             serializer = TenancyListSerializer(tenancy)
-
             return Response({
                 'success': True,
                 'tenancy': serializer.data
@@ -1823,8 +1826,9 @@ class TenancyDetailView(APIView):
         except Tenancy.DoesNotExist:
             return Response({
                 'success': False,
-                'message': 'Tenancy not found'
+                'message': 'Tenancy not found or is closed'
             }, status=status.HTTP_404_NOT_FOUND)
+
 
     def put(self, request, pk, format=None):
         tenancy = self.get_object(pk)
@@ -1855,6 +1859,23 @@ class TenancyDetailView(APIView):
                 'success': False,
                 'message': 'Tenancy not found'
             }, status=status.HTTP_404_NOT_FOUND)
+        
+    def post(self, request, pk):
+        action = request.query_params.get('action', '').lower()
+        if action == 'reject':
+            tenancy = self.get_object(pk)
+            tenancy.status = 'vacant'  # Or 'rejected' if you prefer
+            tenancy.save()
+            return Response({
+                'success': True,
+                'message': 'Tenancy rejected successfully.',
+                'status': tenancy.status
+            }, status=status.HTTP_200_OK)
+
+        return Response({
+            'success': False,
+            'message': 'Invalid action.'
+        }, status=status.HTTP_400_BAD_REQUEST)
       
 
 
