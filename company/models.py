@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.hashers import make_password, check_password
 from accounts.models import *
 from decimal import Decimal
+from datetime import date
 
 
 
@@ -440,17 +441,14 @@ class Tenancy(models.Model):
             base_code = f"TC{next_base_number:03d}"
             return base_code
 
-
-
-
     def save(self, *args, **kwargs):
         
         if not self.tenancy_code:
             self.tenancy_code = self.generate_tenancy_code()
 
   
-        if self.rent_per_frequency and self.no_payments:
-            self.total_rent_receivable = self.rent_per_frequency * Decimal(self.no_payments)
+        # if self.rent_per_frequency and self.rental_months:
+        #     self.total_rent_receivable = self.rent_per_frequency * Decimal(self.rental_months)
         
         super().save(*args, **kwargs)
 
@@ -467,7 +465,8 @@ class PaymentSchedule(models.Model):
     status_choices = [
         ('pending', 'Pending'),
         ('paid', 'Paid') ,
-        ('invoice', 'Invoice')
+        ('partially_paid', 'Partially Paid'),
+        ('invoiced', 'Invoiced')
        
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='pending')   
@@ -491,7 +490,8 @@ class AdditionalCharge(models.Model):
     status_choices = [
         ('pending', 'Pending'),
         ('paid', 'Paid') ,
-        ('invoice', 'Invoice') 
+        ('partially_paid', 'Partially Paid'),
+        ('invoiced', 'Invoiced') 
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='pending')   
     amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -518,6 +518,8 @@ class Invoice(models.Model):
   
     status_choices = [
         ('unpaid', 'Unpaid'),
+        ('partially_paid', 'Partially Paid'),
+        ('overdue', 'Overdue'),       
         ('paid', 'Paid'),
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='unpaid')
@@ -549,3 +551,6 @@ class InvoiceAutomationConfig(models.Model):
 
     def __str__(self):
         return f"Invoice Config for {self.tenancy} - {'Combined' if self.combine_charges else 'Separate'}"
+
+
+

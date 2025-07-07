@@ -1,6 +1,10 @@
 
 from django.urls import path
 from  .views import *
+from .reports import (
+    TenancyExportAPIView,
+    )
+from rentbiz.utils.dashboard import *
 
 urlpatterns = [
     
@@ -15,7 +19,7 @@ urlpatterns = [
     path('user/<int:user_id>/details/', UserDetailView.as_view(), name='user-detail'),
     
 
-    # Building Properties                                                                           
+    # Building Properties                                                                                
     path('buildings/create/', BuildingCreateView.as_view(), name='building-create'),
     path('buildings/<int:pk>/', BuildingDetailView.as_view(), name='building-detail'),
     path('buildings/company/<int:company_id>/', BuildingByCompanyView.as_view(), name='building-by-company'),
@@ -82,6 +86,8 @@ urlpatterns = [
     path('tenancy/<int:pk>/confirm/', ConfirmTenancyView.as_view(), name='confirm-tenancy'),
     path('tenancy/<int:tenancy_id>/renew/', TenancyRenewalView.as_view(), name='tenancy-renew'),
     path('tenancy/<int:tenancy_id>/download-pdf/', TenancyHTMLPDFView.as_view(), name='tenancy-download-pdf'),
+    path('tenancies/company/<company_id>/<unit_id>/',TenanciesByUnitView.as_view(), name='tenancies-by-unit'),
+    path('tenancies/<int:tenancy_id>/terminate/', TerminateTenancyAPIView.as_view(), name='terminate-tenancy'),
     
     
     #Taxes
@@ -112,6 +118,17 @@ urlpatterns = [
     path('tenancies/<int:tenancy_id>/payment-schedules/<int:schedule_id>/', PaymentScheduleAPIView.as_view(), name='payment-schedule-update'),
 
 
+    #Dashboard
+    path('dashboard/properties-summary/<int:company_id>/', PropertiesSummaryView.as_view(), name='properties-summary'),
+    path('dashboard/rent-collection/<int:company_id>/', RentCollectionView.as_view(), name='rent-collection'),
+    path('dashboard/tenency-expiring/<int:company_id>/', TenancyExpiringView.as_view(), name='tenency-expiring'),
+    path('dashboard/revenue-report/<int:company_id>/', FinancialReportView.as_view(), name='revenue-report'),
+    path('dashboard/collection-list/<int:company_id>/',CollectionListView.as_view(),name='collection-list'),
+
+    # Reports
+    path('tenancies/<int:company_id>/export/', TenancyExportAPIView.as_view(), name='tenancy-export'),
+
+   
 
 ]
 

@@ -114,6 +114,8 @@ class StateListView(APIView):
                 {"error": "Country not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
+
+            
 class CompanyDetailView(APIView):
     def get(self, request, company_id):
         try:
@@ -132,6 +134,7 @@ class CompanyDetailView(APIView):
             return Response(serializer.data)
         except Company.DoesNotExist:
             return Response({'error': 'Company not found'}, status=404)
+
 
 class CountryListView(APIView):
     def get(self, request, country_id=None):
