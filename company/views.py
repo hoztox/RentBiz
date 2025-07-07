@@ -1883,6 +1883,10 @@ class TenancyByCompanyAPIView(APIView):
     def get(self, request, company_id):
         tenancies = Tenancy.objects.filter(company_id=company_id)
 
+        # Default: EXCLUDE closed if no status filter given
+        if not request.query_params.get('status', None):
+            tenancies = tenancies.exclude(status='closed')
+
         # Apply filters
         search = request.query_params.get('search', None)
         tenancy_code = request.query_params.get('tenancy_code', None)
@@ -1916,12 +1920,10 @@ class TenancyByCompanyAPIView(APIView):
         if end_date:
             tenancies = tenancies.filter(end_date__lte=end_date)
 
-        # Apply pagination
         paginator = CustomPagination()
         paginated_qs = paginator.paginate_queryset(tenancies, request)
         serializer = TenancyListSerializer(paginated_qs, many=True)
         return paginator.get_paginated_response(serializer.data)
-
 
 class PendingTenanciesByCompanyAPIView(APIView):
     def get(self, request, company_id):
