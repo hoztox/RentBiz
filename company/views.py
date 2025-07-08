@@ -2004,6 +2004,15 @@ class CloseTenanciesByCompanyAPIView(APIView):
         serializer = TenancyListSerializer(pending_tenancies, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+class OpenTenanciesByCompanyAPIView(APIView):
+    """
+    Return all tenancies for the company EXCEPT those with status 'Closed'
+    """
+
+    def get(self, request, company_id):
+        tenancies = Tenancy.objects.filter(company_id=company_id).exclude(status='closed')
+        serializer = TenancyListSerializer(tenancies, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 class VacantUnitsByBuildingView(APIView):
     def get(self, request, building_id):

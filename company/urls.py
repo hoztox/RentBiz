@@ -88,10 +88,12 @@ urlpatterns = [
     path('tenancy/<int:tenancy_id>/download-pdf/', TenancyHTMLPDFView.as_view(), name='tenancy-download-pdf'),
     path('tenancies/company/<company_id>/<unit_id>/',TenanciesByUnitView.as_view(), name='tenancies-by-unit'),
     path('tenancies/<int:tenancy_id>/terminate/', TerminateTenancyAPIView.as_view(), name='terminate-tenancy'),
+    path('tenancies/open/<int:company_id>/', OpenTenanciesByCompanyAPIView.as_view(), name='open-tenancies-by-company'),
+
     
     
     #Taxes
-    path('taxes/<int:company_id>/<int:tax_id>/', TaxesAPIView.as_view(), name='taxes'),
+    path('taxes/<int:company_id>/<int:tax_id>/', TaxesAPIView.as_view(), name='taxes-delete'),
     path('taxes/<int:company_id>/', TaxesAPIView.as_view(), name='taxes'),
 
     # AdditionalCharge
