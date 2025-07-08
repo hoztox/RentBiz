@@ -1806,15 +1806,18 @@ class TenancyCreateView(APIView):
 
 class TenancyDetailView(APIView):
     """Get tenancy details with payment schedules"""
+
+
     def get_object(self, pk):
-        return get_object_or_404(Tenancy, pk=pk)
+        tenancy = get_object_or_404(Tenancy, pk=pk)
+        if tenancy.status == 'closed':
+            raise Tenancy.DoesNotExist("This tenancy is closed.")
+        return tenancy
 
     def get(self, request, pk):
         try:
-            tenancy = Tenancy.objects.select_related(
-                'tenant', 'building', 'unit').get(pk=pk)
+            tenancy = self.get_object(pk)
             serializer = TenancyListSerializer(tenancy)
-
             return Response({
                 'success': True,
                 'tenancy': serializer.data
@@ -1823,8 +1826,9 @@ class TenancyDetailView(APIView):
         except Tenancy.DoesNotExist:
             return Response({
                 'success': False,
-                'message': 'Tenancy not found'
+                'message': 'Tenancy not found or is closed'
             }, status=status.HTTP_404_NOT_FOUND)
+
 
     def put(self, request, pk, format=None):
         tenancy = self.get_object(pk)
@@ -1879,6 +1883,10 @@ class TenancyByCompanyAPIView(APIView):
     def get(self, request, company_id):
         tenancies = Tenancy.objects.filter(company_id=company_id)
 
+        # Default: EXCLUDE closed if no status filter given
+        if not request.query_params.get('status', None):
+            tenancies = tenancies.exclude(status='closed')
+
         # Apply filters
         search = request.query_params.get('search', None)
         tenancy_code = request.query_params.get('tenancy_code', None)
@@ -1912,12 +1920,10 @@ class TenancyByCompanyAPIView(APIView):
         if end_date:
             tenancies = tenancies.filter(end_date__lte=end_date)
 
-        # Apply pagination
         paginator = CustomPagination()
         paginated_qs = paginator.paginate_queryset(tenancies, request)
         serializer = TenancyListSerializer(paginated_qs, many=True)
         return paginator.get_paginated_response(serializer.data)
-
 
 class PendingTenanciesByCompanyAPIView(APIView):
     def get(self, request, company_id):
@@ -1998,6 +2004,15 @@ class CloseTenanciesByCompanyAPIView(APIView):
         serializer = TenancyListSerializer(pending_tenancies, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+class OpenTenanciesByCompanyAPIView(APIView):
+    """
+    Return all tenancies for the company EXCEPT those with status 'Closed'
+    """
+
+    def get(self, request, company_id):
+        tenancies = Tenancy.objects.filter(company_id=company_id).exclude(status='closed')
+        serializer = TenancyListSerializer(tenancies, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 class VacantUnitsByBuildingView(APIView):
     def get(self, request, building_id):
