@@ -1298,7 +1298,9 @@ class ExcessDepositsAPIView(APIView):
 
         except Tenancy.DoesNotExist:
             return Response({'error': 'Tenancy not found'}, status=status.HTTP_404_NOT_FOUND)
+
         except Exception as e:
+            print(f"Error retrieving excess deposits: {str(e)}")
             return Response(
                 {'error': f"An error occurred: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -1661,6 +1663,78 @@ class UpdateRefundAPIView(APIView):
         except Users.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
+            return Response(
+                {'error': f"An error occurred: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class GetRefundAPIView(APIView):
+    """
+    API to retrieve details of a specific refund by ID.
+
+    Endpoint: GET /api/refunds/<refund_id>/
+    Purpose: Fetches the details of a refund record, including associated tenancy information.
+    Response:
+        - 200 OK:
+            {
+                "id": <refund_id>,
+                "tenancy_id": <tenancy_id>,
+                "refund_type": <type>,
+                "amount": <amount>,
+                "refund_method": <method>,
+                "reference_number": <number>,
+                "reason": <reason>,
+                "processed_date": <date>,
+                "account_holder_name": <name>,
+                "account_number": <number>,
+                "cheque_number": <number>,
+                "cheque_date": <date>
+            }
+        - 404 Not Found: Refund not found.
+        - 500 Internal Server Error: Unexpected server error.
+    Example Request:
+        curl -X GET http://localhost:8000/api/refunds/1/
+    Example Response:
+        {
+            "id": 1,
+            "tenancy_id": 12345,
+            "refund_type": "deposit",
+            "amount": 500.00,
+            "refund_method": "bank_transfer",
+            "reference_number": "REF12345",
+            "reason": "Refund processed for overpayment",
+            "processed_date": "2023-06-15",
+            "account_holder_name": "John Doe",
+            "account_number": "1234567890",
+            "cheque_number": null,
+            "cheque_date": null
+        }
+    """
+
+    def get(self, request, refund_id):
+        try:
+            refund = get_object_or_404(Refund, id=refund_id)
+            response_data = {
+                'id': refund.id,
+                'tenancy_id': refund.tenancy.id if refund.tenancy else None,
+                'refund_type': refund.refund_type,
+                'amount': float(refund.amount),
+                'refund_method': refund.refund_method,
+                'reference_number': refund.reference_number,
+                'reason': refund.reason,
+                'processed_date': refund.processed_date.strftime('%Y-%m-%d') if refund.processed_date else None,
+                # 'account_holder_name': refund.account_holder_name,
+                # 'account_number': refund.account_number,
+                # 'cheque_number': refund.cheque_number,
+                # 'cheque_date': refund.cheque_date.strftime('%Y-%m-%d') if refund.cheque_date else None,
+            }
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        except Refund.DoesNotExist:
+            return Response({'error': 'Refund not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            print(f"Error retrieving refund details: {str(e)}")
             return Response(
                 {'error': f"An error occurred: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
