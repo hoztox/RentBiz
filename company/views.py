@@ -1327,27 +1327,60 @@ class ChargesByCompanyAPIView(APIView):
         return Response(serializer.data)
 
 
+
 class ChargesDetailAPIView(APIView):
     def get_object(self, id):
-        return get_object_or_404(Charges, id=id)
+        try:
+            return get_object_or_404(Charges, id=id)
+        except Exception as e:
+            raise NotFound(detail=f"Object with ID {id} not found: {str(e)}")
 
     def get(self, request, id):
-        unit_type = self.get_object(id)
-        serializer = ChargesGetSerializer(unit_type)
-        return Response(serializer.data)
+        try:
+            unit_type = self.get_object(id)
+            serializer = ChargesGetSerializer(unit_type)
+            return Response(serializer.data)
+        except NotFound as e:
+            return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response(
+                {"error": "An unexpected error occurred"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     def put(self, request, id):
-        unit_type = self.get_object(id)
-        serializer = ChargesSerializer(unit_type, data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            unit_type = self.get_object(id)
+            serializer = ChargesSerializer(unit_type, data=request.data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except NotFound as e:
+            return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except ValidationError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response(
+                {"error": "An unexpected error occurred"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     def delete(self, request, id):
-        unit_type = self.get_object(id)
-        unit_type.delete()
-        return Response({"message": "Deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
+        try:
+            unit_type = self.get_object(id)
+            unit_type.delete()
+            return Response(
+                {"message": "Deleted successfully"},
+                status=status.HTTP_204_NO_CONTENT,
+            )
+        except NotFound as e:
+            return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response(
+                {"error": "An unexpected error occurred"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 class PaymentSchedulePreviewView(APIView):
@@ -2379,7 +2412,6 @@ class TaxesAPIView(APIView):
                 {"detail": "An unexpected error occurred while creating the tax record."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
     def put(self, request, company_id, tax_id):
         """
         Update an existing tax record or create a new version if critical fields change.
@@ -2394,41 +2426,52 @@ class TaxesAPIView(APIView):
         """
         try:
             # Input Validation
+            print(f"PUT request received: company_id={company_id}, tax_id={tax_id}")
+            print(f"Request data: {request.data}")
+
             # Ensure company_id and tax_id are valid positive integers
             if not company_id or not str(company_id).isdigit():
+                print(f"Invalid company_id: {company_id}")
                 return Response(
                     {"detail": "Invalid company ID provided."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
             if not tax_id or not str(tax_id).isdigit():
+                print(f"Invalid tax_id: {tax_id}")
                 return Response(
                     {"detail": "Invalid tax ID provided."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
             # Database Operations
+            print(f"Fetching company with ID: {company_id}")
             # Verify the company exists
             try:
                 company = Company.objects.get(id=company_id)
             except Company.DoesNotExist:
+                print(f"Company not found for ID: {company_id}")
                 return Response(
                     {"detail": "Company not found."},
                     status=status.HTTP_404_NOT_FOUND
                 )
 
             # Fetch the existing tax record
+            print(f"Fetching tax record with ID: {tax_id} for company ID: {company_id}")
             try:
                 existing_tax = Taxes.objects.get(id=tax_id, company=company)
             except Taxes.DoesNotExist:
+                print(f"Tax record not found for tax_id: {tax_id}, company_id: {company_id}")
                 return Response(
                     {"detail": "Tax record not found."},
                     status=status.HTTP_404_NOT_FOUND
                 )
 
             # Validate Request Data
+            print(f"Validating request data: {request.data}")
             # Ensure request body contains data
             if not request.data:
+                print("No request data provided")
                 return Response(
                     {"detail": "Request data is required."},
                     status=status.HTTP_400_BAD_REQUEST
@@ -2443,26 +2486,33 @@ class TaxesAPIView(APIView):
                 data['applicable_to'] = existing_tax.applicable_to
             if 'applicable_from' not in data:
                 data['applicable_from'] = existing_tax.applicable_from
+            print(f"Prepared data for update: {data}")
 
             # Serialize and validate the updated data
+            print("Serializing and validating data")
             serializer = TaxesSerializer(existing_tax, data=data, partial=True)
             if not serializer.is_valid():
+                print(f"Serializer errors: {serializer.errors}")
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
             # Transaction Block
+            print("Starting atomic transaction")
             # Use atomic transaction to ensure database consistency
             try:
                 with transaction.atomic():
                     validated_data = serializer.validated_data
                     applicable_from = validated_data.get(
                         'applicable_from', existing_tax.applicable_from)
+                    print(f"Validated data: {validated_data}")
+                    print(f"Applicable from: {applicable_from}")
 
                     # Handle string to date conversion for applicable_from
                     if isinstance(applicable_from, str):
                         try:
-                            applicable_from = date.fromisoformat(
-                                applicable_from)
+                            applicable_from = date.fromisoformat(applicable_from)
+                            print(f"Converted applicable_from to date: {applicable_from}")
                         except ValueError:
+                            print(f"Invalid date format for applicable_from: {applicable_from}")
                             return Response(
                                 {"detail": "Invalid date format for applicable_from. Use YYYY-MM-DD."},
                                 status=status.HTTP_400_BAD_REQUEST
@@ -2473,13 +2523,14 @@ class TaxesAPIView(APIView):
                     critical_fields_changed = (
                         validated_data.get('tax_percentage') != existing_tax.tax_percentage or
                         validated_data.get('applicable_from') != existing_tax.applicable_from or
-                        validated_data.get(
-                            'applicable_to') != existing_tax.applicable_to
+                        validated_data.get('applicable_to') != existing_tax.applicable_to
                     )
+                    print(f"Critical fields changed: {critical_fields_changed}")
 
                     if critical_fields_changed:
                         # Validate new applicable_from date
                         if applicable_from < existing_tax.applicable_from:
+                            print(f"Invalid applicable_from: {applicable_from} is before {existing_tax.applicable_from}")
                             return Response(
                                 {"detail": "New applicable_from date cannot be before the current tax start date."},
                                 status=status.HTTP_400_BAD_REQUEST
@@ -2487,19 +2538,17 @@ class TaxesAPIView(APIView):
 
                         # Close the existing tax period
                         end_date = applicable_from - timedelta(days=1)
+                        print(f"Closing existing tax period with end_date: {end_date}")
                         existing_tax.close_tax_period(end_date)
 
                         # Create a new tax version
+                        print("Creating new tax version")
                         new_tax = Taxes.objects.create(
                             company=company,
-                            tax_type=validated_data.get(
-                                'tax_type', existing_tax.tax_type),
-                            tax_percentage=validated_data.get(
-                                'tax_percentage', existing_tax.tax_percentage),
-                            country=validated_data.get(
-                                'country', existing_tax.country),
-                            state=validated_data.get(
-                                'state', existing_tax.state),
+                            tax_type=validated_data.get('tax_type', existing_tax.tax_type),
+                            tax_percentage=validated_data.get('tax_percentage', existing_tax.tax_percentage),
+                            country=validated_data.get('country', existing_tax.country),
+                            state=validated_data.get('state', existing_tax.state),
                             applicable_from=applicable_from,
                             applicable_to=None,
                             is_active=True,
@@ -2507,28 +2556,33 @@ class TaxesAPIView(APIView):
                         )
 
                         # Link the existing tax to the new version
+                        print(f"Linking existing tax ID {tax_id} to new tax ID {new_tax.id}")
                         existing_tax.superseded_by = new_tax
                         existing_tax.save()
 
                         # Return the serialized new tax record
                         new_serializer = TaxesSerializer(new_tax)
+                        print(f"Returning new tax data: {new_serializer.data}")
                         return Response(new_serializer.data, status=status.HTTP_200_OK)
                     else:
                         # Update the existing tax record without versioning
+                        print("Updating existing tax record")
                         serializer.save()
+                        print(f"Returning updated tax data: {serializer.data}")
                         return Response(serializer.data, status=status.HTTP_200_OK)
 
             except IntegrityError as e:
                 # Handle database constraint violations
-                logger.error(
-                    f"Database integrity error in PUT taxes: {str(e)}")
+                print(f"IntegrityError in transaction: {str(e)}")
+                logger.error(f"Database integrity error in PUT taxes: {e}")
                 return Response(
                     {"detail": "A database constraint was violated. Please check your data."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             except ValidationError as e:
                 # Handle validation errors from the model
-                logger.error(f"Validation error in PUT taxes: {str(e)}")
+                print(f"ValidationError in transaction: {str(e)}")
+                logger.error(f"Validation error in PUT taxes: {e}")
                 return Response(
                     {"detail": f"Validation error: {str(e)}"},
                     status=status.HTTP_400_BAD_REQUEST
@@ -2536,6 +2590,7 @@ class TaxesAPIView(APIView):
 
         except Exception as e:
             # Log unexpected errors for debugging
+            print(f"Unexpected error in PUT: {str(e)}")
             logger.error(f"Unexpected error in PUT taxes: {str(e)}")
             return Response(
                 {"detail": "An unexpected error occurred while updating the tax record."},
