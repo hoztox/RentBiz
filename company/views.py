@@ -25,6 +25,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import render, get_object_or_404
 from django.template.loader import render_to_string, get_template
+from django.core.mail import send_mail
+from django.utils.crypto import get_random_string
 from django.utils.html import strip_tags
 from django.core.mail import EmailMultiAlternatives
 from django.conf import settings
@@ -249,6 +251,174 @@ class UserCreateAPIView(APIView):
         email.send(fail_silently=False)
 
 
+
+class ChangePasswordAPIView(APIView):
+      """
+    API to change the password for a user or company account.
+
+    Endpoint: POST /company/auth/change-password/
+    Purpose: Allows a user or company to securely change their password by providing the correct old password.
+    Request Body:
+        {
+            "username": <username_or_user_id> (string/int, required),
+            "old_password": <old_password> (string, required),
+            "new_password": <new_password> (string, required),
+            "confirm_password": <confirm_password> (string, required, must match new_password)
+        }
+
+    Response:
+        - 200 OK:
+            {
+                "success": "Password changed successfully"
+            }
+
+        - 400 Bad Request:
+            {
+                "error": "All fields are required"
+            }
+            OR
+            {
+                "error": "Old password is incorrect"
+            }
+            OR
+            {
+                "error": "Passwords do not match"
+            }
+
+        - 404 Not Found:
+            {
+                "error": "Invalid username or company ID"
+            }
+
+    Example Request:
+        curl -X POST http://localhost:8000/company/auth/change-password/ \
+        -H "Content-Type: application/json" \
+        -d '{"username": "john_doe", "old_password": "OldPass123!", "new_password": "NewPass456!", "confirm_password": "NewPass456!"}'
+
+    Example Response:
+        {
+            "success": "Password changed successfully"
+        }
+        
+         """
+
+
+def post(self, request):
+        username = request.data.get('username')
+        old_password = request.data.get('old_password')
+        new_password = request.data.get('new_password')
+        confirm_password = request.data.get('confirm_password')
+
+       
+
+        if not username or not old_password or not new_password or not confirm_password:
+            return Response({"error": "All fields are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ✅ 1. Try user
+        try:
+            user = Users.objects.get(username=username)
+          
+
+            if not user.check_password(old_password):
+                return Response({"error": "Old password is incorrect"}, status=status.HTTP_400_BAD_REQUEST)
+
+            if new_password != confirm_password:
+                return Response({"error": "Passwords do not match"}, status=status.HTTP_400_BAD_REQUEST)
+
+            user.set_password(new_password)
+            user.save()
+
+            return Response({"success": "Password changed successfully"}, status=status.HTTP_200_OK)
+
+        except Users.DoesNotExist:
+            print("No Users match, trying Company...")
+
+        # ✅ 2. Try company
+        try:
+            company = Company.objects.get(user_id=username)
+            
+
+            if not company.check_password(old_password):
+                return Response({"error": "Old password is incorrect"}, status=status.HTTP_400_BAD_REQUEST)
+
+            if new_password != confirm_password:
+                return Response({"error": "Passwords do not match"}, status=status.HTTP_400_BAD_REQUEST)
+
+            company.set_password(new_password)
+            company.save()
+
+            return Response({"success": "Password changed successfully"}, status=status.HTTP_200_OK)
+
+        except Company.DoesNotExist:
+            print("No Company match either")
+
+        return Response({"error": "Invalid username or company ID"}, status=status.HTTP_404_NOT_FOUND)
+
+class ForgotPasswordAPIView(APIView):
+     """
+    API to generate and send a temporary password to a company's registered email.
+
+    Endpoint: POST /company/auth/forgot-password/
+    Purpose: Allows a company to reset their password by receiving a temporary password via email.
+    Request Body:
+        {
+            "email": <company_email_address> (string, required)
+        }
+
+    Response:
+        - 200 OK:
+            {
+                "success": "Temporary password sent to your email."
+            }
+
+        - 400 Bad Request:
+            {
+                "error": "Email is required."
+            }
+
+        - 404 Not Found:
+            {
+                "error": "No company found with this email."
+            }
+
+    Example Request:
+        curl -X POST http://localhost:8000/company/auth/forgot-password/ \
+        -H "Content-Type: application/json" \
+        -d '{"email": "admin@company.com"}'
+
+    Example Response:
+        {
+            "success": "Temporary password sent to your email."
+        }
+    """
+
+def post(self, request):
+        email = request.data.get('email')
+        if not email:
+            return Response({"error": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            company = Company.objects.get(email_address=email)
+        except Company.DoesNotExist:
+            return Response({"error": "No company found with this email."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Generate a temporary password
+        temp_password = get_random_string(length=8)
+
+        # Hash and save it properly using your set_password method
+        company.set_password(temp_password)
+        company.save()
+
+        # Send the temp password to the company admin
+        send_mail(
+            subject='Your Temporary Password',
+            message=f"Hi {company.company_admin_name},\n\nYour temporary password is: {temp_password}\nPlease log in and change it immediately.",
+            from_email='noreply@example.com',
+            recipient_list=[company.email_address],
+            fail_silently=False,
+        )
+
+        return Response({"success": "Temporary password sent to your email."}, status=status.HTTP_200_OK)
 class UserListByCompanyAPIView(APIView):
     def get(self, request, company_id):
         search_query = request.query_params.get('search', '').strip()

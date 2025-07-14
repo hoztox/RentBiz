@@ -17,6 +17,8 @@ urlpatterns = [
     path('users/company/<int:company_id>/', UserListByCompanyAPIView.as_view(), name='user-list-by-company'),
     path('users/<int:user_id>/', UserDetailAPIView.as_view(), name='user-detail'),
     path('user/<int:user_id>/details/', UserDetailView.as_view(), name='user-detail'),
+    path('auth/change-password/', ChangePasswordAPIView.as_view(), name='change-password'),
+    path('forgot-password/', ForgotPasswordAPIView.as_view(), name='forgot-password'),
     
 
     # Building Properties                                                                                
