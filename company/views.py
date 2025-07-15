@@ -253,6 +253,37 @@ class UserCreateAPIView(APIView):
 
 
 class ChangePasswordAPIView(APIView):
+    """
+    POST: Handles changing the password for both User and Company accounts.
+
+    This endpoint accepts a username (or user ID) along with the old password, new password,
+    and a confirmation of the new password. It performs the following steps:
+
+    1. Attempts to find a User with the given username.
+       - If found, checks if the old password is correct.
+       - If the old password matches, updates the User's password to the new password.
+       - Returns a success response if the password was changed.
+
+    2. If no User is found, attempts to find a Company with the given user ID.
+       - If found, checks if the old password is correct.
+       - If the old password matches, updates the Company account's password.
+       - Returns a success response if the password was changed.
+
+    If no matching User or Company is found, or if any validation fails, it responds with an error.
+
+    Expected request body:
+    {
+        "username": "<username or user ID>",
+        "old_password": "<current password>",
+        "new_password": "<new password>",
+        "confirm_password": "<confirm new password>"
+    }
+
+    Response:
+    - 200 OK with success message if the password was changed.
+    - 400 Bad Request if required fields are missing, old password is incorrect, or passwords do not match.
+    - 404 Not Found if no matching User or Company account is found.
+    """
 
     def post(self, request):
         username = request.data.get('username')
@@ -260,15 +291,12 @@ class ChangePasswordAPIView(APIView):
         new_password = request.data.get('new_password')
         confirm_password = request.data.get('confirm_password')
 
-       
-
         if not username or not old_password or not new_password or not confirm_password:
             return Response({"error": "All fields are required"}, status=status.HTTP_400_BAD_REQUEST)
 
         # ✅ 1. Try user
         try:
             user = Users.objects.get(username=username)
-          
 
             if not user.check_password(old_password):
                 return Response({"error": "Old password is incorrect"}, status=status.HTTP_400_BAD_REQUEST)
@@ -287,7 +315,6 @@ class ChangePasswordAPIView(APIView):
         # ✅ 2. Try company
         try:
             company = Company.objects.get(user_id=username)
-            
 
             if not company.check_password(old_password):
                 return Response({"error": "Old password is incorrect"}, status=status.HTTP_400_BAD_REQUEST)
@@ -305,9 +332,33 @@ class ChangePasswordAPIView(APIView):
 
         return Response({"error": "Invalid username or company ID"}, status=status.HTTP_404_NOT_FOUND)
 
+
 class ForgotPasswordAPIView(APIView):
     """
-    POST: Forgot password — send temp password to registered email for Company or User.
+    POST: Handles the forgot password flow for both Company and User accounts.
+
+    This endpoint accepts an email address and performs the following steps:
+    1. Checks if a Company account exists with the given email.
+       - If found, generates a temporary random password.
+       - Updates the Company account's password securely.
+       - Sends the temporary password to the registered company email address.
+
+    2. If no Company is found, checks if a User account exists with the given email.
+       - If found, generates a temporary random password.
+       - Updates the User account's password securely.
+       - Sends the temporary password to the registered user email address.
+
+    If no matching account is found, it responds with a 404 error.
+
+    Expected request body:
+    {
+        "email": "<registered email>"
+    }
+
+    Response:
+    - 200 OK with success message if a temporary password was sent.
+    - 400 Bad Request if the email is missing.
+    - 404 Not Found if no account matches the provided email.
     """
 
     def post(self, request):
@@ -358,7 +409,7 @@ class ForgotPasswordAPIView(APIView):
             print("No User found either")
 
         return Response({"error": "No account found with this email."}, status=status.HTTP_404_NOT_FOUND)
-    
+
 class UserListByCompanyAPIView(APIView):
     def get(self, request, company_id):
         search_query = request.query_params.get('search', '').strip()
