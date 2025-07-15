@@ -253,57 +253,8 @@ class UserCreateAPIView(APIView):
 
 
 class ChangePasswordAPIView(APIView):
-      """
-    API to change the password for a user or company account.
 
-    Endpoint: POST /company/auth/change-password/
-    Purpose: Allows a user or company to securely change their password by providing the correct old password.
-    Request Body:
-        {
-            "username": <username_or_user_id> (string/int, required),
-            "old_password": <old_password> (string, required),
-            "new_password": <new_password> (string, required),
-            "confirm_password": <confirm_password> (string, required, must match new_password)
-        }
-
-    Response:
-        - 200 OK:
-            {
-                "success": "Password changed successfully"
-            }
-
-        - 400 Bad Request:
-            {
-                "error": "All fields are required"
-            }
-            OR
-            {
-                "error": "Old password is incorrect"
-            }
-            OR
-            {
-                "error": "Passwords do not match"
-            }
-
-        - 404 Not Found:
-            {
-                "error": "Invalid username or company ID"
-            }
-
-    Example Request:
-        curl -X POST http://localhost:8000/company/auth/change-password/ \
-        -H "Content-Type: application/json" \
-        -d '{"username": "john_doe", "old_password": "OldPass123!", "new_password": "NewPass456!", "confirm_password": "NewPass456!"}'
-
-    Example Response:
-        {
-            "success": "Password changed successfully"
-        }
-        
-         """
-
-
-def post(self, request):
+    def post(self, request):
         username = request.data.get('username')
         old_password = request.data.get('old_password')
         new_password = request.data.get('new_password')
@@ -355,70 +306,59 @@ def post(self, request):
         return Response({"error": "Invalid username or company ID"}, status=status.HTTP_404_NOT_FOUND)
 
 class ForgotPasswordAPIView(APIView):
-     """
-    API to generate and send a temporary password to a company's registered email.
-
-    Endpoint: POST /company/auth/forgot-password/
-    Purpose: Allows a company to reset their password by receiving a temporary password via email.
-    Request Body:
-        {
-            "email": <company_email_address> (string, required)
-        }
-
-    Response:
-        - 200 OK:
-            {
-                "success": "Temporary password sent to your email."
-            }
-
-        - 400 Bad Request:
-            {
-                "error": "Email is required."
-            }
-
-        - 404 Not Found:
-            {
-                "error": "No company found with this email."
-            }
-
-    Example Request:
-        curl -X POST http://localhost:8000/company/auth/forgot-password/ \
-        -H "Content-Type: application/json" \
-        -d '{"email": "admin@company.com"}'
-
-    Example Response:
-        {
-            "success": "Temporary password sent to your email."
-        }
+    """
+    POST: Forgot password — send temp password to registered email for Company or User.
     """
 
-def post(self, request):
+    def post(self, request):
         email = request.data.get('email')
         if not email:
             return Response({"error": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # ✅ 1. Try company
         try:
             company = Company.objects.get(email_address=email)
+
+            temp_password = get_random_string(length=8)
+            company.set_password(temp_password)
+            company.save()
+
+            send_mail(
+                subject='Your Temporary Password',
+                message=f"Hi {company.company_admin_name},\n\nYour temporary password is: {temp_password}\nPlease log in and change it immediately.",
+                from_email='noreply@example.com',
+                recipient_list=[company.email_address],
+                fail_silently=False,
+            )
+
+            return Response({"success": "Temporary password sent to your email."}, status=status.HTTP_200_OK)
+
         except Company.DoesNotExist:
-            return Response({"error": "No company found with this email."}, status=status.HTTP_404_NOT_FOUND)
+            print("No Company found, trying Users...")
 
-        # Generate a temporary password
-        temp_password = get_random_string(length=8)
+        # ✅ 2. Try user
+        try:
+            user = Users.objects.get(email=email)
 
-        # Hash and save it properly using your set_password method
-        company.set_password(temp_password)
-        company.save()
+            temp_password = get_random_string(length=8)
+            user.set_password(temp_password)
+            user.save()
 
-        # Send the temp password to the company admin
-        send_mail(
-            subject='Your Temporary Password',
-            message=f"Hi {company.company_admin_name},\n\nYour temporary password is: {temp_password}\nPlease log in and change it immediately.",
-            from_email='noreply@example.com',
-            recipient_list=[company.email_address],
-            fail_silently=False,
-        )
+            send_mail(
+                subject='Your Temporary Password',
+                message=f"Hi {user.username},\n\nYour temporary password is: {temp_password}\nPlease log in and change it immediately.",
+                from_email='noreply@example.com',
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
 
-        return Response({"success": "Temporary password sent to your email."}, status=status.HTTP_200_OK)
+            return Response({"success": "Temporary password sent to your email."}, status=status.HTTP_200_OK)
+
+        except Users.DoesNotExist:
+            print("No User found either")
+
+        return Response({"error": "No account found with this email."}, status=status.HTTP_404_NOT_FOUND)
+    
 class UserListByCompanyAPIView(APIView):
     def get(self, request, company_id):
         search_query = request.query_params.get('search', '').strip()
