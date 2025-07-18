@@ -375,7 +375,8 @@ class Tenancy(models.Model):
         ('active', 'Active') ,
         ('terminated', 'Terminated'),
         ('closed', 'Closed') ,
-        ('renewed', 'Renewed') 
+        ('renewed', 'Renewed') ,
+        ('vacant','Vacant')
     ]
     status = models.CharField(max_length=20, choices=status_choices, default='pending')
     
