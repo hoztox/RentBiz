@@ -2711,7 +2711,7 @@ class TaxesAPIView(APIView):
                             country=validated_data.get('country', existing_tax.country),
                             state=validated_data.get('state', existing_tax.state),
                             applicable_from=applicable_from,
-                            applicable_to=None,
+                            applicable_to=validated_data.get('applicable_to'),
                             is_active=True,
                             user=existing_tax.user
                         )
