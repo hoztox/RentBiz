@@ -932,6 +932,96 @@ class UnitsByCompanyView(APIView):
 
         return paginate_queryset(units, request, UnitGetSerializer)
 
+
+ 
+
+from django.db.models import Count, Case, When, IntegerField, Q
+class UnitsByOccupiedvacantView(APIView):
+    def get(self, request, company_id):
+        # Debug incoming request
+        print("🔹 Query Params:", request.query_params)
+        print("🔹 Path Param (company_id):", company_id)
+
+        units = Units.objects.filter(company__id=company_id)
+
+        # filters
+        search_query = request.query_params.get('search', '').strip()
+        status_filter = request.query_params.get('status', '').strip().lower()
+
+        print("🔹 Search Query:", search_query)
+        print("🔹 Status Filter:", status_filter)
+
+        if search_query:
+            units = units.filter(
+                Q(code__icontains=search_query) |
+                Q(created_at__icontains=search_query) |
+                Q(unit_name__icontains=search_query) |
+                Q(address__icontains=search_query) |
+                Q(building__building_name__icontains=search_query) |
+                Q(unit_type__title__icontains=search_query)
+            )
+
+        if status_filter in ['occupied', 'renovation', 'vacant', 'disputed']:
+            units = units.filter(unit_status__iexact=status_filter)
+
+        units = units.order_by('id')
+
+        # --- Optimized Stats in one query ---
+        stats = Units.objects.filter(company__id=company_id).aggregate(
+            # Apartment stats
+            apartment_total=Count(Case(When(unit_type__title__iexact="apartment", then=1), output_field=IntegerField())),
+            apartment_occupied=Count(Case(When(unit_type__title__iexact="apartment", unit_status__iexact="occupied", then=1), output_field=IntegerField())),
+            apartment_vacant=Count(Case(When(unit_type__title__iexact="apartment", unit_status__iexact="vacant", then=1), output_field=IntegerField())),
+
+            # Shop stats
+            shop_total=Count(Case(When(unit_type__title__iexact="shop", then=1), output_field=IntegerField())),
+            shop_occupied=Count(Case(When(unit_type__title__iexact="shop", unit_status__iexact="occupied", then=1), output_field=IntegerField())),
+            shop_vacant=Count(Case(When(unit_type__title__iexact="shop", unit_status__iexact="vacant", then=1), output_field=IntegerField())),
+
+            # Overall stats
+            total_units=Count("id"),
+            total_occupied=Count(Case(When(unit_status__iexact="occupied", then=1), output_field=IntegerField())),
+            total_vacant=Count(Case(When(unit_status__iexact="vacant", then=1), output_field=IntegerField())),
+            total_renovation=Count(Case(When(unit_status__iexact="renovation", then=1), output_field=IntegerField())),
+            total_disputed=Count(Case(When(unit_status__iexact="disputed", then=1), output_field=IntegerField())),
+        )
+
+        apartmentStats = {
+            "total": stats["apartment_total"],
+            "occupied": stats["apartment_occupied"],
+            "vacant": stats["apartment_vacant"],
+        }
+
+        shopStats = {
+            "total": stats["shop_total"],
+            "occupied": stats["shop_occupied"],
+            "vacant": stats["shop_vacant"],
+        }
+
+        totalStats = {
+            "total": stats["total_units"],
+            "occupied": stats["total_occupied"],
+            "vacant": stats["total_vacant"],
+            "renovation": stats["total_renovation"],
+            "disputed": stats["total_disputed"],
+        }
+
+        # paginate units list
+        paginated_units = paginate_queryset(units, request, UnitGetSerializer)
+
+        response_data = {
+            "units": paginated_units.data if hasattr(paginated_units, "data") else paginated_units,
+            "apartmentStats": apartmentStats,
+            "shopStats": shopStats,
+            "totalStats": totalStats,  # 🔹 new global stats
+        }
+
+        # 🔹 Debug final response before sending
+        print("🔹 Response Data:", response_data)
+
+        return Response(response_data)
+
+
 class UnitEditAPIView(APIView):
     def get_object(self, id):
         return get_object_or_404(Units, id=id)
