@@ -2172,14 +2172,14 @@ class TenancyByCompanyAPIView(APIView):
             tenancies = tenancies.exclude(status='closed')
 
         # Apply filters
-        search = request.query_params.get('search', None)
-        tenancy_code = request.query_params.get('tenancy_code', None)
-        tenant = request.query_params.get('tenant', None)
-        building = request.query_params.get('building', None)
-        unit = request.query_params.get('unit', None)
-        status = request.query_params.get('status', None)
-        start_date = request.query_params.get('start_date', None)
-        end_date = request.query_params.get('end_date', None)
+        search = request.query_params.get('search')
+        tenancy_code = request.query_params.get('tenancy_code')
+        tenant = request.query_params.get('tenant')
+        building = request.query_params.get('building')
+        unit = request.query_params.get('unit')
+        status = request.query_params.get('status')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
 
         if search:
             tenancies = tenancies.filter(
@@ -2204,10 +2204,14 @@ class TenancyByCompanyAPIView(APIView):
         if end_date:
             tenancies = tenancies.filter(end_date__lte=end_date)
 
+        # ✅ Ensure consistent order for pagination
+        tenancies = tenancies.order_by('-id')
+
         paginator = CustomPagination()
         paginated_qs = paginator.paginate_queryset(tenancies, request)
         serializer = TenancyListSerializer(paginated_qs, many=True)
         return paginator.get_paginated_response(serializer.data)
+
 
 class PendingTenanciesByCompanyAPIView(APIView):
     def get(self, request, company_id):
