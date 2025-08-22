@@ -17,6 +17,8 @@ urlpatterns = [
     path('users/company/<int:company_id>/', UserListByCompanyAPIView.as_view(), name='user-list-by-company'),
     path('users/<int:user_id>/', UserDetailAPIView.as_view(), name='user-detail'),
     path('user/<int:user_id>/details/', UserDetailView.as_view(), name='user-detail'),
+    path('auth/change-password/', ChangePasswordAPIView.as_view(), name='change-password'),
+    path('forgot-password/', ForgotPasswordAPIView.as_view(), name='forgot-password'),
     
 
     # Building Properties                                                                                
@@ -25,6 +27,7 @@ urlpatterns = [
     path('buildings/company/<int:company_id>/', BuildingByCompanyView.as_view(), name='building-by-company'),
     path('buildings/vacant/<int:company_id>/', BuildingsWithVacantUnitsView.as_view(), name='buildings-with-vacant-units'),
     path('buildings/occupied/<int:company_id>/', BuildingsWithOccupiedUnitsView.as_view(), name='buildings-with-vacant-units'),
+    path('buildings/active-vacant/<int:company_id>/', BuildingsWithVacantActiveView.as_view(), name='buildings-with-vacant-units'),
     
     
     # unit Properties
@@ -32,6 +35,7 @@ urlpatterns = [
     path('units/<int:pk>/', UnitDetailView.as_view(), name='unit-detail'),
     path('units/<int:id>/edit/', UnitEditAPIView.as_view(), name='unit-edit'),
     path('units/company/<int:company_id>/', UnitsByCompanyView.as_view(), name='units-by-company'),
+     path('units/company/occupied-vacant/<int:company_id>/', UnitsByOccupiedvacantView.as_view(), name='units-by-company'),
     path('units/<int:building_id>/vacant-units/', VacantUnitsByBuildingView.as_view(), name='vacant-units-by-building'),
     path('units/<int:building_id>/occupied-units/', OccupiedUnitsByBuildingView.as_view(), name='vacant-units-by-building'),
    
@@ -88,10 +92,12 @@ urlpatterns = [
     path('tenancy/<int:tenancy_id>/download-pdf/', TenancyHTMLPDFView.as_view(), name='tenancy-download-pdf'),
     path('tenancies/company/<company_id>/<unit_id>/',TenanciesByUnitView.as_view(), name='tenancies-by-unit'),
     path('tenancies/<int:tenancy_id>/terminate/', TerminateTenancyAPIView.as_view(), name='terminate-tenancy'),
+    path('tenancies/open/<int:company_id>/', OpenTenanciesByCompanyAPIView.as_view(), name='open-tenancies-by-company'),
+
     
     
     #Taxes
-    path('taxes/<int:company_id>/<int:tax_id>/', TaxesAPIView.as_view(), name='taxes'),
+    path('taxes/<int:company_id>/<int:tax_id>/', TaxesAPIView.as_view(), name='taxes-delete'),
     path('taxes/<int:company_id>/', TaxesAPIView.as_view(), name='taxes'),
 
     # AdditionalCharge

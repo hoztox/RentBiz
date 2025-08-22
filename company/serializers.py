@@ -821,7 +821,7 @@ class AdditionalChargeGetSerializer(serializers.ModelSerializer):
 
 
 class TenancyDetailSerializer(serializers.ModelSerializer):
-    tenant_name = serializers.CharField(source='tenant.name', read_only=True)
+    tenant_name = serializers.CharField(source='tenant.tenant_name', read_only=True)
     building_name = serializers.CharField(source='building.name', read_only=True)
     unit_name = serializers.CharField(source='unit.name', read_only=True)
     payment_schedules = PaymentScheduleGetSerializer(many=True, read_only=True)

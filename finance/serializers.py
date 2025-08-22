@@ -248,35 +248,8 @@ class CollectionSerializer(serializers.ModelSerializer):
 
 
 class RefundSerializer(serializers.ModelSerializer):
-    """
-    Serializer for Refund objects.
-
-    Purpose:
-        Serializes Refund model data for display, including derived tenancy and tenant information.
-        Formats processed_date and amount for display.
-
-    Fields:
-        - id, processed_date, amount, refund_method, status
-        - tenancy_id: Derived from tenancy.tenancy_id (allow null)
-        - tenant_name: Derived from tenancy.tenant_name (allow null)
-        - status: Defaults to 'Paid'
-
-    Usage:
-        Used in RefundListAPIView to return refund data.
-
-    Example Response Data:
-        {
-            "id": 1,
-            "processed_date": "01 Jul 2025",
-            "tenancy_id": "T001",
-            "tenant_name": "John Doe",
-            "amount": "1000.00",
-            "refund_method": "bank_transfer",
-            "status": "Paid"
-        }
-    """
-    tenancy_id = serializers.CharField(source='tenancy.tenancy_id', allow_null=True)
-    tenant_name = serializers.CharField(source='tenancy.tenant_name', allow_null=True)
+    tenancy_id = serializers.CharField(source='tenancy.tenancy_code', allow_null=True)  
+    tenant_name = serializers.CharField(source='tenancy.tenant.tenant_name', allow_null=True)
     status = serializers.CharField(default='Paid')
 
     class Meta:
@@ -284,10 +257,7 @@ class RefundSerializer(serializers.ModelSerializer):
         fields = ['id', 'processed_date', 'tenancy_id', 'tenant_name', 'amount', 'refund_method', 'status']
 
     def to_representation(self, instance):
-        try:
-            representation = super().to_representation(instance)
-            representation['processed_date'] = instance.processed_date.strftime('%d %b %Y')
-            representation['amount'] = f"{float(instance.amount):.2f}"
-            return representation
-        except Exception as e:
-            raise serializers.ValidationError(f"Error formatting refund data: {str(e)}")
+        representation = super().to_representation(instance)
+        representation['processed_date'] = instance.processed_date.strftime('%d %b %Y')
+        representation['amount'] = f"{float(instance.amount):.2f}"
+        return representation

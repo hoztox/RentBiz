@@ -25,6 +25,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import render, get_object_or_404
 from django.template.loader import render_to_string, get_template
+from django.core.mail import send_mail
+from django.utils.crypto import get_random_string
 from django.utils.html import strip_tags
 from django.core.mail import EmailMultiAlternatives
 from django.conf import settings
@@ -248,6 +250,165 @@ class UserCreateAPIView(APIView):
 
         email.send(fail_silently=False)
 
+
+
+class ChangePasswordAPIView(APIView):
+    """
+    POST: Handles changing the password for both User and Company accounts.
+
+    This endpoint accepts a username (or user ID) along with the old password, new password,
+    and a confirmation of the new password. It performs the following steps:
+
+    1. Attempts to find a User with the given username.
+       - If found, checks if the old password is correct.
+       - If the old password matches, updates the User's password to the new password.
+       - Returns a success response if the password was changed.
+
+    2. If no User is found, attempts to find a Company with the given user ID.
+       - If found, checks if the old password is correct.
+       - If the old password matches, updates the Company account's password.
+       - Returns a success response if the password was changed.
+
+    If no matching User or Company is found, or if any validation fails, it responds with an error.
+
+    Expected request body:
+    {
+        "username": "<username or user ID>",
+        "old_password": "<current password>",
+        "new_password": "<new password>",
+        "confirm_password": "<confirm new password>"
+    }
+
+    Response:
+    - 200 OK with success message if the password was changed.
+    - 400 Bad Request if required fields are missing, old password is incorrect, or passwords do not match.
+    - 404 Not Found if no matching User or Company account is found.
+    """
+
+    def post(self, request):
+        username = request.data.get('username')
+        old_password = request.data.get('old_password')
+        new_password = request.data.get('new_password')
+        confirm_password = request.data.get('confirm_password')
+
+        if not username or not old_password or not new_password or not confirm_password:
+            return Response({"error": "All fields are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ✅ 1. Try user
+        try:
+            user = Users.objects.get(username=username)
+
+            if not user.check_password(old_password):
+                return Response({"error": "Old password is incorrect"}, status=status.HTTP_400_BAD_REQUEST)
+
+            if new_password != confirm_password:
+                return Response({"error": "Passwords do not match"}, status=status.HTTP_400_BAD_REQUEST)
+
+            user.set_password(new_password)
+            user.save()
+
+            return Response({"success": "Password changed successfully"}, status=status.HTTP_200_OK)
+
+        except Users.DoesNotExist:
+            print("No Users match, trying Company...")
+
+        # ✅ 2. Try company
+        try:
+            company = Company.objects.get(user_id=username)
+
+            if not company.check_password(old_password):
+                return Response({"error": "Old password is incorrect"}, status=status.HTTP_400_BAD_REQUEST)
+
+            if new_password != confirm_password:
+                return Response({"error": "Passwords do not match"}, status=status.HTTP_400_BAD_REQUEST)
+
+            company.set_password(new_password)
+            company.save()
+
+            return Response({"success": "Password changed successfully"}, status=status.HTTP_200_OK)
+
+        except Company.DoesNotExist:
+            print("No Company match either")
+
+        return Response({"error": "Invalid username or company ID"}, status=status.HTTP_404_NOT_FOUND)
+
+
+class ForgotPasswordAPIView(APIView):
+    """
+    POST: Handles the forgot password flow for both Company and User accounts.
+
+    This endpoint accepts an email address and performs the following steps:
+    1. Checks if a Company account exists with the given email.
+       - If found, generates a temporary random password.
+       - Updates the Company account's password securely.
+       - Sends the temporary password to the registered company email address.
+
+    2. If no Company is found, checks if a User account exists with the given email.
+       - If found, generates a temporary random password.
+       - Updates the User account's password securely.
+       - Sends the temporary password to the registered user email address.
+
+    If no matching account is found, it responds with a 404 error.
+
+    Expected request body:
+    {
+        "email": "<registered email>"
+    }
+
+    Response:
+    - 200 OK with success message if a temporary password was sent.
+    - 400 Bad Request if the email is missing.
+    - 404 Not Found if no account matches the provided email.
+    """
+
+    def post(self, request):
+        email = request.data.get('email')
+        if not email:
+            return Response({"error": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ✅ 1. Try company
+        try:
+            company = Company.objects.get(email_address=email)
+
+            temp_password = get_random_string(length=8)
+            company.set_password(temp_password)
+            company.save()
+
+            send_mail(
+                subject='Your Temporary Password',
+                message=f"Hi {company.company_admin_name},\n\nYour temporary password is: {temp_password}\nPlease log in and change it immediately.",
+                from_email='noreply@example.com',
+                recipient_list=[company.email_address],
+                fail_silently=False,
+            )
+
+            return Response({"success": "Temporary password sent to your email."}, status=status.HTTP_200_OK)
+
+        except Company.DoesNotExist:
+            print("No Company found, trying Users...")
+
+        # ✅ 2. Try user
+        try:
+            user = Users.objects.get(email=email)
+
+            temp_password = get_random_string(length=8)
+            user.set_password(temp_password)
+            user.save()
+
+            send_mail(
+                subject='Your Temporary Password',
+                message=f"Hi {user.username},\n\nYour temporary password is: {temp_password}\nPlease log in and change it immediately.",
+                from_email='noreply@example.com',
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
+
+            return Response({"success": "Temporary password sent to your email."}, status=status.HTTP_200_OK)
+
+        except Users.DoesNotExist:
+            print("No User found either")
+
+        return Response({"error": "No account found with this email."}, status=status.HTTP_404_NOT_FOUND)
 
 class UserListByCompanyAPIView(APIView):
     def get(self, request, company_id):
@@ -770,6 +931,96 @@ class UnitsByCompanyView(APIView):
         units = units.order_by('id')
 
         return paginate_queryset(units, request, UnitGetSerializer)
+
+
+ 
+
+from django.db.models import Count, Case, When, IntegerField, Q
+class UnitsByOccupiedvacantView(APIView):
+    def get(self, request, company_id):
+        # Debug incoming request
+        print("🔹 Query Params:", request.query_params)
+        print("🔹 Path Param (company_id):", company_id)
+
+        units = Units.objects.filter(company__id=company_id)
+
+        # filters
+        search_query = request.query_params.get('search', '').strip()
+        status_filter = request.query_params.get('status', '').strip().lower()
+
+        print("🔹 Search Query:", search_query)
+        print("🔹 Status Filter:", status_filter)
+
+        if search_query:
+            units = units.filter(
+                Q(code__icontains=search_query) |
+                Q(created_at__icontains=search_query) |
+                Q(unit_name__icontains=search_query) |
+                Q(address__icontains=search_query) |
+                Q(building__building_name__icontains=search_query) |
+                Q(unit_type__title__icontains=search_query)
+            )
+
+        if status_filter in ['occupied', 'renovation', 'vacant', 'disputed']:
+            units = units.filter(unit_status__iexact=status_filter)
+
+        units = units.order_by('id')
+
+        # --- Optimized Stats in one query ---
+        stats = Units.objects.filter(company__id=company_id).aggregate(
+            # Apartment stats
+            apartment_total=Count(Case(When(unit_type__title__iexact="apartment", then=1), output_field=IntegerField())),
+            apartment_occupied=Count(Case(When(unit_type__title__iexact="apartment", unit_status__iexact="occupied", then=1), output_field=IntegerField())),
+            apartment_vacant=Count(Case(When(unit_type__title__iexact="apartment", unit_status__iexact="vacant", then=1), output_field=IntegerField())),
+
+            # Shop stats
+            shop_total=Count(Case(When(unit_type__title__iexact="shop", then=1), output_field=IntegerField())),
+            shop_occupied=Count(Case(When(unit_type__title__iexact="shop", unit_status__iexact="occupied", then=1), output_field=IntegerField())),
+            shop_vacant=Count(Case(When(unit_type__title__iexact="shop", unit_status__iexact="vacant", then=1), output_field=IntegerField())),
+
+            # Overall stats
+            total_units=Count("id"),
+            total_occupied=Count(Case(When(unit_status__iexact="occupied", then=1), output_field=IntegerField())),
+            total_vacant=Count(Case(When(unit_status__iexact="vacant", then=1), output_field=IntegerField())),
+            total_renovation=Count(Case(When(unit_status__iexact="renovation", then=1), output_field=IntegerField())),
+            total_disputed=Count(Case(When(unit_status__iexact="disputed", then=1), output_field=IntegerField())),
+        )
+
+        apartmentStats = {
+            "total": stats["apartment_total"],
+            "occupied": stats["apartment_occupied"],
+            "vacant": stats["apartment_vacant"],
+        }
+
+        shopStats = {
+            "total": stats["shop_total"],
+            "occupied": stats["shop_occupied"],
+            "vacant": stats["shop_vacant"],
+        }
+
+        totalStats = {
+            "total": stats["total_units"],
+            "occupied": stats["total_occupied"],
+            "vacant": stats["total_vacant"],
+            "renovation": stats["total_renovation"],
+            "disputed": stats["total_disputed"],
+        }
+
+        # paginate units list
+        paginated_units = paginate_queryset(units, request, UnitGetSerializer)
+
+        response_data = {
+            "units": paginated_units.data if hasattr(paginated_units, "data") else paginated_units,
+            "apartmentStats": apartmentStats,
+            "shopStats": shopStats,
+            "totalStats": totalStats,   
+        }
+
+     
+        print("🔹 Response Data:", response_data)
+
+        return Response(response_data)
+
 
 class UnitEditAPIView(APIView):
     def get_object(self, id):
@@ -1327,27 +1578,60 @@ class ChargesByCompanyAPIView(APIView):
         return Response(serializer.data)
 
 
+
 class ChargesDetailAPIView(APIView):
     def get_object(self, id):
-        return get_object_or_404(Charges, id=id)
+        try:
+            return get_object_or_404(Charges, id=id)
+        except Exception as e:
+            raise NotFound(detail=f"Object with ID {id} not found: {str(e)}")
 
     def get(self, request, id):
-        unit_type = self.get_object(id)
-        serializer = ChargesGetSerializer(unit_type)
-        return Response(serializer.data)
+        try:
+            unit_type = self.get_object(id)
+            serializer = ChargesGetSerializer(unit_type)
+            return Response(serializer.data)
+        except NotFound as e:
+            return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response(
+                {"error": "An unexpected error occurred"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     def put(self, request, id):
-        unit_type = self.get_object(id)
-        serializer = ChargesSerializer(unit_type, data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            unit_type = self.get_object(id)
+            serializer = ChargesSerializer(unit_type, data=request.data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except NotFound as e:
+            return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except ValidationError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response(
+                {"error": "An unexpected error occurred"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     def delete(self, request, id):
-        unit_type = self.get_object(id)
-        unit_type.delete()
-        return Response({"message": "Deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
+        try:
+            unit_type = self.get_object(id)
+            unit_type.delete()
+            return Response(
+                {"message": "Deleted successfully"},
+                status=status.HTTP_204_NO_CONTENT,
+            )
+        except NotFound as e:
+            return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response(
+                {"error": "An unexpected error occurred"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 class PaymentSchedulePreviewView(APIView):
@@ -1806,15 +2090,18 @@ class TenancyCreateView(APIView):
 
 class TenancyDetailView(APIView):
     """Get tenancy details with payment schedules"""
+
+
     def get_object(self, pk):
-        return get_object_or_404(Tenancy, pk=pk)
+        tenancy = get_object_or_404(Tenancy, pk=pk)
+        if tenancy.status == 'closed':
+            raise Tenancy.DoesNotExist("This tenancy is closed.")
+        return tenancy
 
     def get(self, request, pk):
         try:
-            tenancy = Tenancy.objects.select_related(
-                'tenant', 'building', 'unit').get(pk=pk)
+            tenancy = self.get_object(pk)
             serializer = TenancyListSerializer(tenancy)
-
             return Response({
                 'success': True,
                 'tenancy': serializer.data
@@ -1823,8 +2110,9 @@ class TenancyDetailView(APIView):
         except Tenancy.DoesNotExist:
             return Response({
                 'success': False,
-                'message': 'Tenancy not found'
+                'message': 'Tenancy not found or is closed'
             }, status=status.HTTP_404_NOT_FOUND)
+
 
     def put(self, request, pk, format=None):
         tenancy = self.get_object(pk)
@@ -1875,27 +2163,72 @@ class TenancyDetailView(APIView):
       
 
 
+# class TenancyByCompanyAPIView(APIView):
+#     def get(self, request, company_id):
+#         tenancies = Tenancy.objects.filter(company_id=company_id)
+
+#         # Default: EXCLUDE closed if no status filter given
+#         if not request.query_params.get('status', None):
+#             tenancies = tenancies.exclude(status='closed')
+
+#         # Apply filters
+#         search = request.query_params.get('search', None)
+#         tenancy_code = request.query_params.get('tenancy_code', None)
+#         tenant = request.query_params.get('tenant', None)
+#         building = request.query_params.get('building', None)
+#         unit = request.query_params.get('unit', None)
+#         status = request.query_params.get('status', None)
+#         start_date = request.query_params.get('start_date', None)
+#         end_date = request.query_params.get('end_date', None)
+
+#         if search:
+#             tenancies = tenancies.filter(
+#                 Q(tenancy_code__icontains=search) |
+#                 Q(tenant__tenant_name__icontains=search) |
+#                 Q(building__building_name__icontains=search) |
+#                 Q(unit__unit_name__icontains=search)
+#             )
+
+#         if tenancy_code:
+#             tenancies = tenancies.filter(tenancy_code=tenancy_code)
+#         if tenant:
+#             tenancies = tenancies.filter(tenant__tenant_name=tenant)
+#         if building:
+#             tenancies = tenancies.filter(building__building_name=building)
+#         if unit:
+#             tenancies = tenancies.filter(unit__unit_name=unit)
+#         if status:
+#             tenancies = tenancies.filter(status=status)
+#         if start_date:
+#             tenancies = tenancies.filter(start_date__gte=start_date)
+#         if end_date:
+#             tenancies = tenancies.filter(end_date__lte=end_date)
+
+#         paginator = CustomPagination()
+#         paginated_qs = paginator.paginate_queryset(tenancies, request)
+#         serializer = TenancyListSerializer(paginated_qs, many=True)
+#         return paginator.get_paginated_response(serializer.data)
+
+
+
+
+
 class TenancyByCompanyAPIView(APIView):
     def get(self, request, company_id):
         tenancies = Tenancy.objects.filter(company_id=company_id)
 
-        # Apply filters
-        search = request.query_params.get('search', None)
-        tenancy_code = request.query_params.get('tenancy_code', None)
-        tenant = request.query_params.get('tenant', None)
-        building = request.query_params.get('building', None)
-        unit = request.query_params.get('unit', None)
-        status = request.query_params.get('status', None)
-        start_date = request.query_params.get('start_date', None)
-        end_date = request.query_params.get('end_date', None)
+        # Default: EXCLUDE closed if no status filter given
+        if not request.query_params.get('status', None):
+            tenancies = tenancies.exclude(status='closed')
 
-        if search:
-            tenancies = tenancies.filter(
-                Q(tenancy_code__icontains=search) |
-                Q(tenant__tenant_name__icontains=search) |
-                Q(building__building_name__icontains=search) |
-                Q(unit__unit_name__icontains=search)
-            )
+        # Apply filters
+        tenancy_code = request.query_params.get('tenancy_code')
+        tenant = request.query_params.get('tenant')
+        building = request.query_params.get('building')
+        unit = request.query_params.get('unit')
+        status = request.query_params.get('status')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
 
         if tenancy_code:
             tenancies = tenancies.filter(tenancy_code=tenancy_code)
@@ -1912,12 +2245,12 @@ class TenancyByCompanyAPIView(APIView):
         if end_date:
             tenancies = tenancies.filter(end_date__lte=end_date)
 
-        # Apply pagination
-        paginator = CustomPagination()
-        paginated_qs = paginator.paginate_queryset(tenancies, request)
-        serializer = TenancyListSerializer(paginated_qs, many=True)
-        return paginator.get_paginated_response(serializer.data)
-
+        tenancies = tenancies.order_by('-id')
+        serializer = TenancyListSerializer(tenancies, many=True)
+        return Response({
+            'results': serializer.data,
+            'count': tenancies.count()
+        })
 
 class PendingTenanciesByCompanyAPIView(APIView):
     def get(self, request, company_id):
@@ -1998,6 +2331,15 @@ class CloseTenanciesByCompanyAPIView(APIView):
         serializer = TenancyListSerializer(pending_tenancies, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+class OpenTenanciesByCompanyAPIView(APIView):
+    """
+    Return all tenancies for the company EXCEPT those with status 'Closed'
+    """
+
+    def get(self, request, company_id):
+        tenancies = Tenancy.objects.filter(company_id=company_id).exclude(status='closed')
+        serializer = TenancyListSerializer(tenancies, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 class VacantUnitsByBuildingView(APIView):
     def get(self, request, building_id):
@@ -2018,6 +2360,18 @@ class BuildingsWithVacantUnitsView(APIView):
             company_id=company_id,
             unit_building__unit_status='vacant'
         ).distinct()
+        serializer = BuildingSerializer(buildings, many=True)
+        return Response(serializer.data)
+
+
+class BuildingsWithVacantActiveView(APIView):
+    def get(self, request, company_id):
+        buildings = Building.objects.filter(
+            company_id=company_id,
+            status="active",  # ✅ ensure building is active
+            unit_building__unit_status="vacant"  # ✅ only buildings with vacant units
+        ).distinct()
+
         serializer = BuildingSerializer(buildings, many=True)
         return Response(serializer.data)
 
@@ -2364,7 +2718,6 @@ class TaxesAPIView(APIView):
                 {"detail": "An unexpected error occurred while creating the tax record."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
     def put(self, request, company_id, tax_id):
         """
         Update an existing tax record or create a new version if critical fields change.
@@ -2379,41 +2732,52 @@ class TaxesAPIView(APIView):
         """
         try:
             # Input Validation
+            print(f"PUT request received: company_id={company_id}, tax_id={tax_id}")
+            print(f"Request data: {request.data}")
+
             # Ensure company_id and tax_id are valid positive integers
             if not company_id or not str(company_id).isdigit():
+                print(f"Invalid company_id: {company_id}")
                 return Response(
                     {"detail": "Invalid company ID provided."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
             if not tax_id or not str(tax_id).isdigit():
+                print(f"Invalid tax_id: {tax_id}")
                 return Response(
                     {"detail": "Invalid tax ID provided."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
             # Database Operations
+            print(f"Fetching company with ID: {company_id}")
             # Verify the company exists
             try:
                 company = Company.objects.get(id=company_id)
             except Company.DoesNotExist:
+                print(f"Company not found for ID: {company_id}")
                 return Response(
                     {"detail": "Company not found."},
                     status=status.HTTP_404_NOT_FOUND
                 )
 
             # Fetch the existing tax record
+            print(f"Fetching tax record with ID: {tax_id} for company ID: {company_id}")
             try:
                 existing_tax = Taxes.objects.get(id=tax_id, company=company)
             except Taxes.DoesNotExist:
+                print(f"Tax record not found for tax_id: {tax_id}, company_id: {company_id}")
                 return Response(
                     {"detail": "Tax record not found."},
                     status=status.HTTP_404_NOT_FOUND
                 )
 
             # Validate Request Data
+            print(f"Validating request data: {request.data}")
             # Ensure request body contains data
             if not request.data:
+                print("No request data provided")
                 return Response(
                     {"detail": "Request data is required."},
                     status=status.HTTP_400_BAD_REQUEST
@@ -2428,26 +2792,33 @@ class TaxesAPIView(APIView):
                 data['applicable_to'] = existing_tax.applicable_to
             if 'applicable_from' not in data:
                 data['applicable_from'] = existing_tax.applicable_from
+            print(f"Prepared data for update: {data}")
 
             # Serialize and validate the updated data
+            print("Serializing and validating data")
             serializer = TaxesSerializer(existing_tax, data=data, partial=True)
             if not serializer.is_valid():
+                print(f"Serializer errors: {serializer.errors}")
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
             # Transaction Block
+            print("Starting atomic transaction")
             # Use atomic transaction to ensure database consistency
             try:
                 with transaction.atomic():
                     validated_data = serializer.validated_data
                     applicable_from = validated_data.get(
                         'applicable_from', existing_tax.applicable_from)
+                    print(f"Validated data: {validated_data}")
+                    print(f"Applicable from: {applicable_from}")
 
                     # Handle string to date conversion for applicable_from
                     if isinstance(applicable_from, str):
                         try:
-                            applicable_from = date.fromisoformat(
-                                applicable_from)
+                            applicable_from = date.fromisoformat(applicable_from)
+                            print(f"Converted applicable_from to date: {applicable_from}")
                         except ValueError:
+                            print(f"Invalid date format for applicable_from: {applicable_from}")
                             return Response(
                                 {"detail": "Invalid date format for applicable_from. Use YYYY-MM-DD."},
                                 status=status.HTTP_400_BAD_REQUEST
@@ -2458,13 +2829,14 @@ class TaxesAPIView(APIView):
                     critical_fields_changed = (
                         validated_data.get('tax_percentage') != existing_tax.tax_percentage or
                         validated_data.get('applicable_from') != existing_tax.applicable_from or
-                        validated_data.get(
-                            'applicable_to') != existing_tax.applicable_to
+                        validated_data.get('applicable_to') != existing_tax.applicable_to
                     )
+                    print(f"Critical fields changed: {critical_fields_changed}")
 
                     if critical_fields_changed:
                         # Validate new applicable_from date
                         if applicable_from < existing_tax.applicable_from:
+                            print(f"Invalid applicable_from: {applicable_from} is before {existing_tax.applicable_from}")
                             return Response(
                                 {"detail": "New applicable_from date cannot be before the current tax start date."},
                                 status=status.HTTP_400_BAD_REQUEST
@@ -2472,48 +2844,51 @@ class TaxesAPIView(APIView):
 
                         # Close the existing tax period
                         end_date = applicable_from - timedelta(days=1)
+                        print(f"Closing existing tax period with end_date: {end_date}")
                         existing_tax.close_tax_period(end_date)
 
                         # Create a new tax version
+                        print("Creating new tax version")
                         new_tax = Taxes.objects.create(
                             company=company,
-                            tax_type=validated_data.get(
-                                'tax_type', existing_tax.tax_type),
-                            tax_percentage=validated_data.get(
-                                'tax_percentage', existing_tax.tax_percentage),
-                            country=validated_data.get(
-                                'country', existing_tax.country),
-                            state=validated_data.get(
-                                'state', existing_tax.state),
+                            tax_type=validated_data.get('tax_type', existing_tax.tax_type),
+                            tax_percentage=validated_data.get('tax_percentage', existing_tax.tax_percentage),
+                            country=validated_data.get('country', existing_tax.country),
+                            state=validated_data.get('state', existing_tax.state),
                             applicable_from=applicable_from,
-                            applicable_to=None,
+                            applicable_to=validated_data.get('applicable_to'),
                             is_active=True,
                             user=existing_tax.user
                         )
 
                         # Link the existing tax to the new version
+                        print(f"Linking existing tax ID {tax_id} to new tax ID {new_tax.id}")
                         existing_tax.superseded_by = new_tax
                         existing_tax.save()
 
                         # Return the serialized new tax record
                         new_serializer = TaxesSerializer(new_tax)
+                        print(f"Returning new tax data: {new_serializer.data}")
                         return Response(new_serializer.data, status=status.HTTP_200_OK)
                     else:
                         # Update the existing tax record without versioning
+                        print("Updating existing tax record")
                         serializer.save()
+                        print(f"Returning updated tax data: {serializer.data}")
                         return Response(serializer.data, status=status.HTTP_200_OK)
 
             except IntegrityError as e:
                 # Handle database constraint violations
-                logger.error(
-                    f"Database integrity error in PUT taxes: {str(e)}")
+                print(f"IntegrityError in transaction: {str(e)}")
+                logger.error(f"Database integrity error in PUT taxes: {e}")
                 return Response(
                     {"detail": "A database constraint was violated. Please check your data."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             except ValidationError as e:
                 # Handle validation errors from the model
-                logger.error(f"Validation error in PUT taxes: {str(e)}")
+                print(f"ValidationError in transaction: {str(e)}")
+                logger.error(f"Validation error in PUT taxes: {e}")
                 return Response(
                     {"detail": f"Validation error: {str(e)}"},
                     status=status.HTTP_400_BAD_REQUEST
@@ -2521,6 +2896,7 @@ class TaxesAPIView(APIView):
 
         except Exception as e:
             # Log unexpected errors for debugging
+            print(f"Unexpected error in PUT: {str(e)}")
             logger.error(f"Unexpected error in PUT taxes: {str(e)}")
             return Response(
                 {"detail": "An unexpected error occurred while updating the tax record."},
