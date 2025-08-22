@@ -1013,10 +1013,10 @@ class UnitsByOccupiedvacantView(APIView):
             "units": paginated_units.data if hasattr(paginated_units, "data") else paginated_units,
             "apartmentStats": apartmentStats,
             "shopStats": shopStats,
-            "totalStats": totalStats,  # 🔹 new global stats
+            "totalStats": totalStats,   
         }
 
-        # 🔹 Debug final response before sending
+     
         print("🔹 Response Data:", response_data)
 
         return Response(response_data)
@@ -2317,6 +2317,18 @@ class BuildingsWithVacantUnitsView(APIView):
             company_id=company_id,
             unit_building__unit_status='vacant'
         ).distinct()
+        serializer = BuildingSerializer(buildings, many=True)
+        return Response(serializer.data)
+
+
+class BuildingsWithVacantActiveView(APIView):
+    def get(self, request, company_id):
+        buildings = Building.objects.filter(
+            company_id=company_id,
+            status="active",  # ✅ ensure building is active
+            unit_building__unit_status="vacant"  # ✅ only buildings with vacant units
+        ).distinct()
+
         serializer = BuildingSerializer(buildings, many=True)
         return Response(serializer.data)
 
