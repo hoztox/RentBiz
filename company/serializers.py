@@ -831,18 +831,82 @@ class TenancyDetailSerializer(serializers.ModelSerializer):
         fields = '__all__'
        
         
+# class TenancyListSerializer(serializers.ModelSerializer):
+#     tenant = TenantSerializer()
+#     company_name = serializers.CharField(source='company.name', read_only=True)
+#     building = BuildingSerializer()
+#     unit = UnitGetSerializer()
+#     payment_schedules = PaymentScheduleGetSerializer(many=True, read_only=True) 
+#     additional_charges = AdditionalChargeGetSerializer(many=True, read_only=True)
+
+#     class Meta:
+#         model = Tenancy
+#         fields = '__all__'
 class TenancyListSerializer(serializers.ModelSerializer):
-    tenant = TenantSerializer()
+    # Use SerializerMethodField to handle null values safely
+    tenant = serializers.SerializerMethodField()
     company_name = serializers.CharField(source='company.name', read_only=True)
-    building = BuildingSerializer()
-    unit = UnitGetSerializer()
+    building = serializers.SerializerMethodField()
+    unit = serializers.SerializerMethodField()
     payment_schedules = PaymentScheduleGetSerializer(many=True, read_only=True) 
     additional_charges = AdditionalChargeGetSerializer(many=True, read_only=True)
 
     class Meta:
         model = Tenancy
         fields = '__all__'
+    
+    def get_tenant(self, obj):
+        """Safely serialize tenant, return None if null"""
+        if obj.tenant:
+            return TenantSerializer(obj.tenant).data
+        return None
+    
+    def get_building(self, obj):
+        """Safely serialize building, return None if null"""
+        if obj.building:
+            return BuildingSerializer(obj.building).data
+        return None
+    
+    def get_unit(self, obj):
+        """Safely serialize unit, return None if null"""
+        if obj.unit:
+            return UnitGetSerializer(obj.unit).data
+        return None
 
+# Alternative approach - modify the nested serializers to handle null values
+class SafeTenantSerializer(TenantSerializer):
+    """Tenant serializer that handles null values gracefully"""
+    def to_representation(self, instance):
+        if instance is None:
+            return None
+        return super().to_representation(instance)
+
+class SafeBuildingSerializer(BuildingSerializer):
+    """Building serializer that handles null values gracefully"""
+    def to_representation(self, instance):
+        if instance is None:
+            return None
+        return super().to_representation(instance)
+
+class SafeUnitSerializer(UnitGetSerializer):
+    """Unit serializer that handles null values gracefully"""
+    def to_representation(self, instance):
+        if instance is None:
+            return None
+        return super().to_representation(instance)
+
+# Option 2: Use the safe serializers directly
+class TenancyListSerializerOption2(serializers.ModelSerializer):
+    tenant = SafeTenantSerializer()
+    company_name = serializers.CharField(source='company.name', read_only=True)
+    building = SafeBuildingSerializer()
+    unit = SafeUnitSerializer()
+    payment_schedules = PaymentScheduleGetSerializer(many=True, read_only=True) 
+    additional_charges = AdditionalChargeGetSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Tenancy
+        fields = '__all__'
 
 class TenancyRenewalSerializer(serializers.ModelSerializer):
     additional_charges = AdditionalChargeSerializer(many=True, required=False)
