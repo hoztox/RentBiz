@@ -254,7 +254,7 @@ class RefundSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Refund
-        fields = ['id', 'processed_date', 'tenancy_id', 'tenant_name', 'amount', 'refund_method', 'status','company_id']
+        fields = ['id', 'processed_date', 'tenancy_id', 'tenant_name', 'amount', 'refund_method', 'status','company']
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)

@@ -784,7 +784,7 @@ class PaymentScheduleGetSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def get_amount_paid(self, obj):
-        # Sum the distributed amounts for this payment schedule from PaymentDistribution
+    
         total_paid = PaymentDistribution.objects.filter(
             payment_schedule=obj,
             collection__status='completed'

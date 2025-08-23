@@ -9,6 +9,7 @@ from decimal import Decimal
 from urllib.parse import quote
 from collections import defaultdict
 from .models import Collection
+from accounts.models import *
 from company.models import (
     Invoice, PaymentSchedule, AdditionalCharge, Charges,
     Tenancy, ChargeCode, Users
@@ -1435,8 +1436,11 @@ class CreateRefundAPIView(APIView):
     """
 
     def post(self, request):
+        print("Request data:", request.data)
         try:
             data = request.data
+            company_id = data.get("company")  # This is a string '4'
+            
             tenancy_id = data.get('tenancy_id')
             amount_refunded = float(data.get('amount_refunded') or 0)
             payment_method = data.get('payment_method')
@@ -1449,6 +1453,19 @@ class CreateRefundAPIView(APIView):
                     {'error': 'Missing required fields or invalid refund amount'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
+
+            # FIX: Get the Company instance instead of using the ID string
+            company = None
+            if company_id:
+                try:
+                    company = Company.objects.get(id=int(company_id))
+                    print(f"Company found: {company}")
+                except (Company.DoesNotExist, ValueError) as e:
+                    print(f"Company error: {e}")
+                    return Response(
+                        {'error': 'Company not found'}, 
+                        status=status.HTTP_404_NOT_FOUND
+                    )
 
             tenancy = get_object_or_404(Tenancy, id=tenancy_id)
             processed_by = get_object_or_404(Users, id=processed_by_id) if processed_by_id else None
@@ -1517,7 +1534,10 @@ class CreateRefundAPIView(APIView):
             refund_type = (
                 'deposit' if total_deposit > 0 else 'excess' if total_excess > 0 else 'other'
             )
-            Refund.objects.create(
+            
+            # Create the refund with the Company instance (not the ID string)
+            refund = Refund.objects.create(
+                company=company,  # Now passing Company instance instead of string
                 tenancy=tenancy,
                 refund_type=refund_type,
                 amount=amount_refunded,
@@ -1526,6 +1546,8 @@ class CreateRefundAPIView(APIView):
                 processed_date=payment_date,
                 processed_by=processed_by if processed_by else None
             )
+            
+            print(f"Refund created successfully: ID={refund.id}, Company={refund.company}")
 
             return Response(
                 {'message': 'Refund created successfully'},
@@ -1537,51 +1559,31 @@ class CreateRefundAPIView(APIView):
         except Users.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
+            print(f"Unexpected error: {str(e)}")
+            import traceback
+            traceback.print_exc()  # This will help debug the exact error
             return Response(
                 {'error': f"An error occurred: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
-
 class RefundListAPIView(APIView):
     """
-    API to list refunds with optional search and filters.
+    API to list refunds for a particular company with optional search and filters.
 
-    Endpoint: GET /api/refunds/
-    Purpose: Retrieves a paginated list of refunds, supporting search by ID, processed date,
-             tenancy code, tenant name, amount, or refund method, and filtering by type.
-    Query Parameters:
-        - search: Search term for filtering refunds.
-        - filter: Filter type (e.g., 'showing').
-    Response:
-        - 200 OK: Paginated list of serialized refund data.
-        - 500 Internal Server Error: Unexpected server error.
-    Example Request:
-        curl -X GET http://localhost:8000/api/refunds/?search=1000
-    Example Response:
-        {
-            "count": 5,
-            "next": null,
-            "previous": null,
-            "results": [
-                {
-                    "id": 1,
-                    "tenancy": {...},
-                    "amount": "1000.00",
-                    ...
-                },
-                ...
-            ]
-        }
+    Endpoint: GET /api/refunds/<company_id>/
     """
 
-    def get(self, request):
+    def get(self, request, company_id):
         try:
             search_term = request.query_params.get('search', '').strip()
             filter_type = request.query_params.get('filter', 'showing').lower()
 
-            queryset = Refund.objects.select_related('tenancy').order_by('-processed_date')
+            # Filter refunds by company
+            queryset = Refund.objects.filter(company_id=company_id).select_related(
+                'tenancy', 'tenancy__tenant'
+            ).order_by('-processed_date')
 
+            # Apply search filters
             if search_term:
                 queryset = queryset.filter(
                     Q(id__icontains=search_term) |
@@ -1596,7 +1598,7 @@ class RefundListAPIView(APIView):
 
         except Exception as e:
             return Response(
-                {'error': 'Failed to fetch refunds'},
+                {'error': f'Failed to fetch refunds: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
