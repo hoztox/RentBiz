@@ -69,11 +69,8 @@ urlpatterns = [
         CollectionDetailAPIView.as_view(), 
         name='collection-detail'
         ), 
-    path(
-        'collections/',
-        CollectionListAPIView.as_view(),
-        name='collection-list'
-    ), 
+   path('companies/<int:company_id>/collections/', CollectionListAPIView.as_view(), name='collection-list'),
+ 
 
     # ------------------------------------------------------------------
     # Expenses

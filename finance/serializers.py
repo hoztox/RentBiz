@@ -224,12 +224,12 @@ class CollectionSerializer(serializers.ModelSerializer):
             'id', 'invoice', 'amount', 'collection_date', 'collection_mode',
             'reference_number', 'status', 'account_holder_name',
             'account_number', 'cheque_number', 'cheque_date',
-            'tenancy_id', 'tenant_name', 'invoice_status'
+            'tenancy_id', 'tenant_name', 'invoice_status',"company"
         ]
 
     def validate(self, data):
         invoice = data.get('invoice')
-        # Only enforce 'unpaid' status for creation (when self.instance is None)
+
         if invoice and not self.instance and invoice.status != 'unpaid':
             raise serializers.ValidationError(
                 f"Cannot create collection for invoice {invoice.id} with status '{invoice.status}'"
@@ -254,7 +254,7 @@ class RefundSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Refund
-        fields = ['id', 'processed_date', 'tenancy_id', 'tenant_name', 'amount', 'refund_method', 'status']
+        fields = ['id', 'processed_date', 'tenancy_id', 'tenant_name', 'amount', 'refund_method', 'status','company_id']
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
