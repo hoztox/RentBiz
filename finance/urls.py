@@ -20,11 +20,12 @@ urlpatterns = [
         CreateRefundAPIView.as_view(),
         name='create-refund'
     ), 
-    path(
-        'refunds/',
-        RefundListAPIView.as_view(),
-        name='refund-list'
-    ), 
+path(
+    'refunds/company/<int:company_id>/',
+    RefundListAPIView.as_view(),
+    name='refund-list'
+),
+
     path(
         'refunds/<int:refund_id>/',
         GetRefundAPIView.as_view(),
