@@ -6,6 +6,8 @@ from company.models import *
 
 
 class Collection(models.Model):
+    user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='collection_user', null=True, blank=True) 
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='collection_comp', null=True, blank=True)
     invoice = models.ForeignKey(
         Invoice, 
         on_delete=models.CASCADE, 
@@ -114,6 +116,8 @@ class Expense(models.Model):
 
 
 class Refund(models.Model):
+    user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='refund_user', null=True, blank=True) 
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='refund_comp', null=True, blank=True)
     REFUND_TYPES = [
         ('deposit', 'Deposit Refund'),
         ('excess', 'Excess Payment Refund'),

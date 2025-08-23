@@ -1113,7 +1113,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'tenancy', 'invoice_date', 'end_date', 'building_name', 'unit_name',
             'items', 'total_amount', 'company', 'user',
-            'payment_schedules', 'additional_charges'
+            'payment_schedules', 'additional_charges','company'
         ]
 
     def validate(self, data):

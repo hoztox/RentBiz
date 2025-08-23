@@ -2161,53 +2161,99 @@ class TenancyDetailView(APIView):
             'message': 'Invalid action.'
         }, status=status.HTTP_400_BAD_REQUEST)
       
-
+import logging
+logger = logging.getLogger(__name__)
 
 class TenancyByCompanyAPIView(APIView):
     def get(self, request, company_id):
-        tenancies = Tenancy.objects.filter(company_id=company_id)
+        try:
+            print(f"=== DEBUG: Starting tenancy fetch for company {company_id} ===")
+            
+            # Test basic query first
+            tenancies = Tenancy.objects.filter(company_id=company_id)
+            print(f"DEBUG: Found {tenancies.count()} tenancies")
+            
+            # Test if basic queryset works
+            for t in tenancies[:3]:  # Check first 3 records
+                print(f"DEBUG: Tenancy {t.id} - tenant: {t.tenant}, building: {t.building}, unit: {t.unit}")
+            
+            if not request.query_params.get('status', None):
+                tenancies = tenancies.exclude(status='closed')
+                print(f"DEBUG: After status filter: {tenancies.count()} tenancies")
 
+            # Your filtering logic here...
+            search = request.query_params.get('search', None)
+            tenancy_code = request.query_params.get('tenancy_code', None)
+            # ... other filters
 
-        if not request.query_params.get('status', None):
-            tenancies = tenancies.exclude(status='closed')
-
-    
-        search = request.query_params.get('search', None)
-        tenancy_code = request.query_params.get('tenancy_code', None)
-        tenant = request.query_params.get('tenant', None)
-        building = request.query_params.get('building', None)
-        unit = request.query_params.get('unit', None)
-        status = request.query_params.get('status', None)
-        start_date = request.query_params.get('start_date', None)
-        end_date = request.query_params.get('end_date', None)
-
-        if search:
-            tenancies = tenancies.filter(
-                Q(tenancy_code__icontains=search) |
-                Q(tenant__tenant_name__icontains=search) |
-                Q(building__building_name__icontains=search) |
-                Q(unit__unit_name__icontains=search)
+            # Test pagination
+            paginator = CustomPagination()
+            paginated_qs = paginator.paginate_queryset(tenancies, request)
+            print(f"DEBUG: Paginated queryset: {len(paginated_qs)} items")
+            
+            # Test serialization
+            print("DEBUG: Starting serialization...")
+            serializer = TenancyListSerializer(paginated_qs, many=True)
+            print("DEBUG: Serialization successful")
+            
+            return paginator.get_paginated_response(serializer.data)
+            
+        except Exception as e:
+            print(f"=== ERROR in TenancyByCompanyAPIView ===")
+            print(f"Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            print("=== END ERROR ===")
+            return Response(
+                {'error': str(e)}, 
+                status=500
             )
 
-        if tenancy_code:
-            tenancies = tenancies.filter(tenancy_code=tenancy_code)
-        if tenant:
-            tenancies = tenancies.filter(tenant__tenant_name=tenant)
-        if building:
-            tenancies = tenancies.filter(building__building_name=building)
-        if unit:
-            tenancies = tenancies.filter(unit__unit_name=unit)
-        if status:
-            tenancies = tenancies.filter(status=status)
-        if start_date:
-            tenancies = tenancies.filter(start_date__gte=start_date)
-        if end_date:
-            tenancies = tenancies.filter(end_date__lte=end_date)
+# class TenancyByCompanyAPIView(APIView):
+#     def get(self, request, company_id):
+#         tenancies = Tenancy.objects.filter(company_id=company_id)
 
-        paginator = CustomPagination()
-        paginated_qs = paginator.paginate_queryset(tenancies, request)
-        serializer = TenancyListSerializer(paginated_qs, many=True)
-        return paginator.get_paginated_response(serializer.data)
+
+#         if not request.query_params.get('status', None):
+#             tenancies = tenancies.exclude(status='closed')
+
+    
+#         search = request.query_params.get('search', None)
+#         tenancy_code = request.query_params.get('tenancy_code', None)
+#         tenant = request.query_params.get('tenant', None)
+#         building = request.query_params.get('building', None)
+#         unit = request.query_params.get('unit', None)
+#         status = request.query_params.get('status', None)
+#         start_date = request.query_params.get('start_date', None)
+#         end_date = request.query_params.get('end_date', None)
+
+#         if search:
+#             tenancies = tenancies.filter(
+#                 Q(tenancy_code__icontains=search) |
+#                 Q(tenant__tenant_name__icontains=search) |
+#                 Q(building__building_name__icontains=search) |
+#                 Q(unit__unit_name__icontains=search)
+#             )
+
+#         if tenancy_code:
+#             tenancies = tenancies.filter(tenancy_code=tenancy_code)
+#         if tenant:
+#             tenancies = tenancies.filter(tenant__tenant_name=tenant)
+#         if building:
+#             tenancies = tenancies.filter(building__building_name=building)
+#         if unit:
+#             tenancies = tenancies.filter(unit__unit_name=unit)
+#         if status:
+#             tenancies = tenancies.filter(status=status)
+#         if start_date:
+#             tenancies = tenancies.filter(start_date__gte=start_date)
+#         if end_date:
+#             tenancies = tenancies.filter(end_date__lte=end_date)
+
+#         paginator = CustomPagination()
+#         paginated_qs = paginator.paginate_queryset(tenancies, request)
+#         serializer = TenancyListSerializer(paginated_qs, many=True)
+#         return paginator.get_paginated_response(serializer.data)
 
 
 
